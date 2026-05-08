@@ -37,8 +37,10 @@ interface PackageCardProps {
   assigning?: boolean;
 }
 
-export default function PackageCard({ pkg, drivers, onAssign, onAccept, onDeliver, onReturn, assigning }: PackageCardProps) {
-  const statusColor = getStatusColor(pkg.status);
+export default function PackageCard(props: PackageCardProps) {
+  const { pkg, drivers, onAssign, onAccept, onDeliver, onReturn, assigning } = props;
+  const status = pkg.status || 'Pending';
+  const statusColor = getStatusColor(status);
   
   // French translations for status labels
   const statusLabels: Record<string, string> = {
@@ -49,15 +51,20 @@ export default function PackageCard({ pkg, drivers, onAssign, onAccept, onDelive
     'Returned': 'Retourné'
   };
   
-  const frenchStatus = statusLabels[pkg.status] || pkg.status;
+  const frenchStatus = statusLabels[status] || status;
+  const customerName = pkg.customer_name || 'Client inconnu';
+  const customerAddress = pkg.customer_address || 'Adresse non disponible';
+  const limitDate = pkg.limit_date || 'N/A';
+  const packagePrice = typeof pkg.price === 'number' ? pkg.price.toFixed(2) : 'N/A';
+  const assignedDriverName = pkg.assigned_to ? (drivers?.find(d => d.id === pkg.assigned_to)?.name || pkg.assigned_to) : null;
 
-  const handleCallPhone = (phone: string) => {
+  const handleCallPhone = (phone?: string) => {
     if (phone) {
       Linking.openURL(`tel:${phone}`);
     }
   };
 
-  const handleWhatsApp = (phone: string) => {
+  const handleWhatsApp = (phone?: string) => {
     if (phone) {
       // Remove leading 0 and add country code (assuming French numbers)
       const formattedPhone = phone.startsWith('0') ? `33${phone.substring(1)}` : phone;
@@ -66,7 +73,7 @@ export default function PackageCard({ pkg, drivers, onAssign, onAccept, onDelive
   };
 
   const handleOpenMap = () => {
-    if (pkg.gps_lat && pkg.gps_lng) {
+    if (pkg.gps_lat != null && pkg.gps_lng != null) {
       // Use geo: URI scheme for better native app support on Android
       // Falls back to https if Google Maps app is not installed
       const geoUrl = `geo:${pkg.gps_lat},${pkg.gps_lng}?q=${pkg.gps_lat},${pkg.gps_lng}`;
@@ -96,16 +103,14 @@ export default function PackageCard({ pkg, drivers, onAssign, onAccept, onDelive
       </View>
 
       <View style={styles.body}>
-        <Text style={styles.name}>{pkg.customer_name}</Text>
-        <Text style={styles.address} numberOfLines={1}>{pkg.customer_address}</Text>
+        <Text style={styles.name}>{customerName}</Text>
+        <Text style={styles.address} numberOfLines={1}>{customerAddress}</Text>
         
         {/* Assigned Driver */}
-        {pkg.assigned_to && (
+        {assignedDriverName && (
           <View style={styles.driverRow}>
             <Text style={styles.driverLabel}>🚚 Assigné à:</Text>
-            <Text style={styles.driverName}>
-              {drivers?.find(d => d.id === pkg.assigned_to)?.name || pkg.assigned_to || 'Non assigné'}
-            </Text>
+            <Text style={styles.driverName}>{assignedDriverName}</Text>
           </View>
         )}
         
@@ -117,7 +122,7 @@ export default function PackageCard({ pkg, drivers, onAssign, onAccept, onDelive
           </View>
         )}
         
-        <Text style={styles.date}>À livrer avant: {pkg.limit_date}</Text>
+        <Text style={styles.date}>À livrer avant: {limitDate}</Text>
         
         {/* Customer Phone */}
         {(pkg.customer_phone || pkg.customer_phone_2) && (
@@ -126,10 +131,10 @@ export default function PackageCard({ pkg, drivers, onAssign, onAccept, onDelive
               <View style={styles.phoneRow}>
                 <Text style={styles.phoneNumber}>{pkg.customer_phone}</Text>
                 <View style={styles.phoneActions}>
-                  <TouchableOpacity style={styles.iconBtn} onPress={() => handleCallPhone(pkg.customer_phone!)}>
+                  <TouchableOpacity style={styles.iconBtn} onPress={() => handleCallPhone(pkg.customer_phone)}>
                     <Text style={styles.iconText}>📞</Text>
                   </TouchableOpacity>
-                  <TouchableOpacity style={styles.iconBtn} onPress={() => handleWhatsApp(pkg.customer_phone!)}>
+                  <TouchableOpacity style={styles.iconBtn} onPress={() => handleWhatsApp(pkg.customer_phone)}>
                     <Text style={styles.iconText}>💬</Text>
                   </TouchableOpacity>
                 </View>
@@ -139,10 +144,10 @@ export default function PackageCard({ pkg, drivers, onAssign, onAccept, onDelive
               <View style={styles.phoneRow}>
                 <Text style={styles.phoneNumber}>{pkg.customer_phone_2}</Text>
                 <View style={styles.phoneActions}>
-                  <TouchableOpacity style={styles.iconBtn} onPress={() => handleCallPhone(pkg.customer_phone_2!)}>
+                  <TouchableOpacity style={styles.iconBtn} onPress={() => handleCallPhone(pkg.customer_phone_2)}>
                     <Text style={styles.iconText}>📞</Text>
                   </TouchableOpacity>
-                  <TouchableOpacity style={styles.iconBtn} onPress={() => handleWhatsApp(pkg.customer_phone_2!)}>
+                  <TouchableOpacity style={styles.iconBtn} onPress={() => handleWhatsApp(pkg.customer_phone_2)}>
                     <Text style={styles.iconText}>💬</Text>
                   </TouchableOpacity>
                 </View>
@@ -169,7 +174,7 @@ export default function PackageCard({ pkg, drivers, onAssign, onAccept, onDelive
       <View style={styles.footer}>
         <View style={{ flex: 1, flexDirection: 'row', alignItems: 'center' }}>
           <Text style={styles.priceLabel}>Montant:</Text>
-          <Text style={styles.priceValue}>{pkg.price.toFixed(2)} DH</Text>
+          <Text style={styles.priceValue}>{packagePrice} DH</Text>
           {pkg.is_paid && (
             <View style={styles.paidBadge}>
               <Text style={styles.paidText}>✓ PAYÉ</Text>
@@ -188,13 +193,13 @@ export default function PackageCard({ pkg, drivers, onAssign, onAccept, onDelive
             </TouchableOpacity>
           )}
 
-          {pkg.status === 'Assigned' && onAccept && (
+          {status === 'Assigned' && onAccept && (
             <TouchableOpacity style={styles.acceptBtn} onPress={() => onAccept(pkg.id)}>
               <Text style={styles.actionBtnText}>Accepter</Text>
             </TouchableOpacity>
           )}
 
-          {pkg.status === 'In Transit' && onDeliver && onReturn && (
+          {status === 'In Transit' && onDeliver && onReturn && (
             <>
               <TouchableOpacity style={styles.returnBtn} onPress={() => onReturn(pkg.id)}>
                 <Text style={styles.actionBtnText}>Retour</Text>
@@ -294,7 +299,7 @@ const styles = StyleSheet.create({
   driverName: { fontSize: FONTS.compact.tiny, color: '#1D4ED8', fontWeight: '700' },
   date: { fontSize: FONTS.compact.tiny, color: '#9CA3AF', fontStyle: 'italic' },
   reasonText: { fontSize: FONTS.compact.tiny, color: '#EF4444', fontStyle: 'italic', marginTop: 2, fontWeight: '600' },
-  phoneSection: { marginTop: SPACING.sm, gap: SPACING.xs },
+  phoneSection: { marginTop: SPACING.sm },
   phoneRow: { 
     flexDirection: 'row', 
     alignItems: 'center', 
@@ -314,7 +319,7 @@ const styles = StyleSheet.create({
   },
   phoneActions: { 
     flexDirection: 'row', 
-    gap: SPACING.xs,
+    alignItems: 'center',
   },
   iconBtn: { 
     backgroundColor: '#FFFFFF',
@@ -330,6 +335,7 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.1,
     shadowRadius: 2,
     elevation: 2,
+    marginLeft: SPACING.xs,
   },
   iconText: { 
     fontSize: FONTS.compact.small,
@@ -353,7 +359,6 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    gap: SPACING.xs,
   },
   mapIcon: {
     fontSize: FONTS.compact.body,
@@ -362,6 +367,7 @@ const styles = StyleSheet.create({
     color: '#FFFFFF', 
     fontSize: FONTS.compact.caption, 
     fontWeight: '700',
+    marginLeft: SPACING.xs,
   },
   footer: { flexDirection: 'row', alignItems: 'center', borderTopWidth: 1, borderTopColor: '#F3F4F6', paddingTop: responsiveSize(8, 10), justifyContent: 'space-between' },
   priceLabel: { fontSize: FONTS.compact.caption, color: '#6B7280', marginRight: SPACING.xs },

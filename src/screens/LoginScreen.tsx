@@ -110,14 +110,16 @@ export default function LoginScreen({ navigation }: LoginScreenProps) {
       // For non-pre-stored IDs, try Firebase (custom IDs created by admin)
       try {
         // Use React Native Firebase API
-        const { getDb } = require('../firebase/config');
-        const db = getDb();
+        const { default: app } = require('@react-native-firebase/app');
+        const { getFirestore: getFirebaseFirestore, doc, getDoc } = require('@react-native-firebase/firestore');
+        const db = getFirebaseFirestore(app);
         
         console.log('🔍 Searching for driver in Firebase:', trimmedId);
         
-        const docSnap = await db.collection('drivers').doc(trimmedId).get();
+        const driverRef = doc(db, 'drivers', trimmedId);
+        const docSnap = await getDoc(driverRef);
         
-        if (docSnap.exists) {
+        if (docSnap.exists()) {
           const data = docSnap.data();
           console.log('✅ Driver found in Firebase:', trimmedId);
           console.log('📋 Driver data:', { is_active: data?.is_active, has_pin: !!data?.pin_code });

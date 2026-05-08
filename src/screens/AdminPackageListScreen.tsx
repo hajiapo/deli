@@ -14,6 +14,7 @@ import {
   ScrollView,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { useFocusEffect } from '@react-navigation/native';
 import { useLocalDatabase } from '../hooks/useLocalDatabase';
 import { AdminPackageListScreenProps } from '../types/navigation';
 
@@ -28,13 +29,18 @@ export default function AdminPackageListScreen({ navigation }: AdminPackageListS
     setRefreshing(false);
   }, [refresh]);
 
+  useFocusEffect(
+    useCallback(() => {
+      refresh();
+    }, [refresh])
+  );
+
   // Filter states
   const [searchQuery, setSearchQuery] = useState('');
   const [filterStatus, setFilterStatus] = useState('all');
   const [filterDate, setFilterDate] = useState('all'); // 'all', 'today', 'week'
-  const [bulkMode, setBulkMode] = useState(false);
 
-  // Bulk selection
+  // Selection
   const [selectedPackageIds, setSelectedPackageIds] = useState<Set<string>>(new Set());
   const [bulkAssignModalVisible, setBulkAssignModalVisible] = useState(false);
   const [selectedDriverId, setSelectedDriverId] = useState('');
@@ -97,14 +103,6 @@ export default function AdminPackageListScreen({ navigation }: AdminPackageListS
       return newSet;
     });
   };
-
-  const selectAll = useCallback(() => {
-    if (selectedPackageIds.size === filteredPackages.length) {
-      setSelectedPackageIds(new Set());
-    } else {
-      setSelectedPackageIds(new Set(filteredPackages.map((p: any) => p.id)));
-    }
-  }, [filteredPackages.length, selectedPackageIds.size]);
 
   const handleBulkAssign = async () => {
     if (!selectedDriverId || selectedPackageIds.size === 0) {
@@ -206,51 +204,36 @@ export default function AdminPackageListScreen({ navigation }: AdminPackageListS
   const renderTableHeader = () => (
     <View style={styles.tableHeader}>
       <Text style={styles.headerCheckbox}>#</Text>
-      <Text style={styles.headerText}>Colis</Text>
-      <Text style={styles.headerText}>Client</Text>
-      <Text style={styles.headerText}>Prix</Text>
-      <Text style={styles.headerText}>Statut</Text>
+      <Text style={[styles.headerText, styles.headerPkg]}>Colis</Text>
+      <Text style={[styles.headerText, styles.headerCustomer]}>Client</Text>
+      <Text style={[styles.headerText, styles.headerPrice]}>Prix</Text>
+      <Text style={[styles.headerText, styles.headerStatus]}>Statut</Text>
     </View>
   );
 
   const renderTableRow = ({ item }: { item: any }) => (
     <View style={styles.tableRow}>
-      {bulkMode && (
-        <TouchableOpacity onPress={() => toggleSelection(item.id)} style={styles.checkbox}>
-          <View style={[
-            styles.checkboxInner,
-            selectedPackageIds.has(item.id) && styles.checkboxChecked
-          ]}>
-            {selectedPackageIds.has(item.id) && <Text style={styles.checkmark}>✓</Text>}
-          </View>
-        </TouchableOpacity>
-      )}
-      <Text style={styles.cellPkg}>{item.ref_number}</Text>
+      <TouchableOpacity onPress={() => toggleSelection(item.id)} style={styles.checkbox}>
+        <View style={[
+          styles.checkboxInner,
+          selectedPackageIds.has(item.id) && styles.checkboxChecked
+        ]}>
+          {selectedPackageIds.has(item.id) && <Text style={styles.checkmark}>✓</Text>}
+        </View>
+      </TouchableOpacity>
+      <TouchableOpacity onPress={() => handleEditPackage(item)} style={[styles.cellPkg, styles.pkgCellContainer]}>
+        <View style={styles.pkgInfo}>
+          <Text style={styles.pkgNumber}>{item.ref_number}</Text>
+          <Text style={styles.pkgSubtitle} numberOfLines={1}>{item.description || 'Pas de description'}</Text>
+        </View>
+      </TouchableOpacity>
       <Text style={styles.cellCustomer} numberOfLines={1}>{item.customer_name}</Text>
       <Text style={styles.cellPrice}>
         {item.is_paid ? 'payé' : (item.price || 0).toString()}
       </Text>
-      <View style={[styles.statusBadge, { backgroundColor: getStatusColor(item.status) }]}>
+      <View style={[styles.statusBadge, { backgroundColor: getStatusColor(item.status) }]}> 
         <Text style={styles.statusText}>{translateStatus(item.status)}</Text>
       </View>
-      
-      {/* Admin Actions */}
-      {!bulkMode && (
-        <View style={styles.actionButtons}>
-          <TouchableOpacity 
-            style={styles.actionBtn} 
-            onPress={() => handleEditPackage(item)}
-          >
-            <Text style={styles.actionBtnText}>✏️</Text>
-          </TouchableOpacity>
-          <TouchableOpacity 
-            style={[styles.actionBtn, styles.deleteBtn]} 
-            onPress={() => handleDeletePackage(item)}
-          >
-            <Text style={styles.actionBtnText}>🗑️</Text>
-          </TouchableOpacity>
-        </View>
-      )}
     </View>
   );
 
@@ -417,17 +400,12 @@ export default function AdminPackageListScreen({ navigation }: AdminPackageListS
       <View style={styles.summaryContainer}>
         <Text style={styles.summaryText}>
           Total: <Text style={styles.summaryBold}>{filteredPackages.length}</Text> colis
+          {selectedPackageIds.size > 0 && (
+            <Text> · Sélection: <Text style={styles.summaryBold}>{selectedPackageIds.size}</Text></Text>
+          )}
         </Text>
         <View style={styles.bulkControls}>
-          <TouchableOpacity 
-            style={[styles.bulkToggle, bulkMode && styles.bulkToggleActive]}
-            onPress={() => setBulkMode(!bulkMode)}
-          >
-            <Text style={[styles.bulkText, bulkMode && styles.bulkTextActive]}>
-              {bulkMode ? `✓ ${selectedPackageIds.size}` : '☐ Bulk'}
-            </Text>
-          </TouchableOpacity>
-          {bulkMode && selectedPackageIds.size > 0 && (
+          {selectedPackageIds.size > 0 && (
             <TouchableOpacity 
               style={styles.bulkAssignBtn}
               onPress={() => setBulkAssignModalVisible(true)}
@@ -441,9 +419,10 @@ export default function AdminPackageListScreen({ navigation }: AdminPackageListS
 
       {/* Table */}
       <FlatList
+        style={styles.list}
         data={filteredPackages}
         keyExtractor={item => item.id}
-        contentContainerStyle={styles.tableContainer}
+        contentContainerStyle={styles.tableContent}
         ListHeaderComponent={renderTableHeader}
         renderItem={renderTableRow}
         refreshControl={
@@ -506,7 +485,19 @@ export default function AdminPackageListScreen({ navigation }: AdminPackageListS
       <Modal visible={editModalVisible} transparent animationType="fade">
         <View style={styles.modalOverlay}>
           <View style={styles.modalContent}>
-            <Text style={styles.modalTitle}>Modifier Colis</Text>
+            <View style={styles.modalHeaderWithActions}>
+              <Text style={styles.modalTitle}>Modifier Colis {editingPackage?.ref_number || ''}</Text>
+              <TouchableOpacity
+                style={[styles.actionBtn, styles.deleteBtn, styles.modalDeleteBtn]}
+                onPress={() => {
+                  setEditModalVisible(false);
+                  setPackageToDelete(editingPackage);
+                  setDeleteModalVisible(true);
+                }}
+              >
+                <Text style={styles.actionBtnText}>🗑️</Text>
+              </TouchableOpacity>
+            </View>
             <ScrollView>
               <View style={styles.filterGroup}>
                 <Text style={styles.filterLabel}>Nom Client</Text>
@@ -628,8 +619,8 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     fontSize: 16,
   },
-  filterRow: { flexDirection: 'row', gap: 12 },
-  filterGroup: { flex: 1 },
+  filterRow: { flexDirection: 'row' },
+  filterGroup: { flex: 1, marginRight: 12 },
   filterLabel: { fontSize: 12, fontWeight: '600', color: '#6B7280', marginBottom: 4 },
   picker: { backgroundColor: '#fff', borderRadius: 8, borderWidth: 1, borderColor: '#D1D5DB', padding: 12 },
   pickerText: { fontSize: 16, color: '#111827' },
@@ -641,9 +632,7 @@ const styles = StyleSheet.create({
     padding: 12,
     backgroundColor: '#EFF6FF',
   },
-  summaryText: { fontSize: 16, fontWeight: '600', color: '#1E40AF' },
-  summaryBold: { color: '#1E3A8A', fontWeight: '800', fontSize: 20 },
-  bulkControls: { flexDirection: 'row', gap: 8 },
+  bulkControls: { flexDirection: 'row', alignItems: 'center' },
   bulkToggle: {
     backgroundColor: '#F3F4F6',
     paddingHorizontal: 12,
@@ -651,21 +640,24 @@ const styles = StyleSheet.create({
     borderRadius: 8,
     borderWidth: 1,
     borderColor: '#D1D5DB',
+    marginRight: 8,
   },
+  summaryText: { fontSize: 16, fontWeight: '600', color: '#1E40AF' },
+  summaryBold: { color: '#1E3A8A', fontWeight: '800', fontSize: 20 },
   bulkToggleActive: { backgroundColor: '#3B82F6', borderColor: '#3B82F6' },
-  bulkText: { color: '#fff', fontSize: 16, fontWeight: '600' },
+  bulkText: { color: '#111827', fontSize: 16, fontWeight: '600' },
+  bulkTextActive: { color: '#fff' },
   bulkAssignBtn: {
     backgroundColor: '#10B981',
     paddingHorizontal: 16,
     paddingVertical: 12,
     borderRadius: 8,
+    marginLeft: 8,
   },
   bulkAssignText: { color: '#fff', fontSize: 16, fontWeight: '600' },
-  bulkTextActive: { color: '#fff' },
 
   actionButtons: {
     flexDirection: 'row',
-    gap: 4,
   },
   actionBtn: {
     backgroundColor: '#F3F4F6',
@@ -673,16 +665,34 @@ const styles = StyleSheet.create({
     paddingVertical: 4,
     borderRadius: 4,
     minWidth: 32,
+    marginRight: 4,
+  },
+  editBtn: {
+    backgroundColor: '#E0F2FE',
+  },
+  viewBtn: {
+    backgroundColor: '#DBEAFE',
   },
   deleteBtn: {
     backgroundColor: '#FEE2E2',
+  },
+  modalHeaderWithActions: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 16,
+  },
+  modalDeleteBtn: {
+    minWidth: 40,
+    paddingHorizontal: 10,
   },
   actionBtnText: {
     fontSize: 12,
     fontWeight: '600',
   },
 
-  tableContainer: { flex: 1, padding: 16 },
+  list: { flex: 1 },
+  tableContent: { padding: 16 },
   tableHeader: {
     flexDirection: 'row',
     backgroundColor: '#F8FAFC',
@@ -692,7 +702,11 @@ const styles = StyleSheet.create({
     marginBottom: 8,
   },
   headerCheckbox: { width: 50, fontWeight: '700', textAlign: 'center' },
-  headerText: { flex: 1, fontWeight: '700', fontSize: 14, color: '#374151' },
+  headerText: { fontWeight: '700', fontSize: 14, color: '#374151' },
+  headerPkg: { flex: 2.4 },
+  headerCustomer: { flex: 2 },
+  headerPrice: { flex: 1, textAlign: 'center' },
+  headerStatus: { flex: 1.2, textAlign: 'center' },
 
   tableRow: {
     flexDirection: 'row',
@@ -721,7 +735,12 @@ const styles = StyleSheet.create({
   },
   checkboxChecked: { backgroundColor: '#10B981', borderColor: '#10B981' },
   checkmark: { color: '#fff', fontWeight: 'bold' },
-  cellPkg: { flex: 1.2, fontWeight: '600', fontSize: 14 },
+  cellPkg: { flex: 2.4 },
+  pkgCellContainer: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  pkgInfo: { flex: 1, marginRight: 8 },
+  pkgNumber: { fontWeight: '700', fontSize: 14, color: '#111827' },
+  pkgSubtitle: { fontSize: 12, color: '#6B7280', marginTop: 2 },
+  pkgActionButtons: { flexDirection: 'row', alignItems: 'center' },
   cellCustomer: { flex: 2, fontSize: 14 },
   cellPrice: { flex: 1, fontWeight: '600', textAlign: 'center', fontSize: 14 },
   statusBadge: {
@@ -768,9 +787,9 @@ const styles = StyleSheet.create({
   },
   modalButtons: {
     flexDirection: 'row',
-    gap: 12,
     marginTop: 8,
   },
+  modalButtonSpacing: { marginRight: 12 },
   modalBtn: {
     flex: 1,
     paddingVertical: 12,
@@ -789,8 +808,9 @@ const styles = StyleSheet.create({
     color: '#fff',
   },
   driverVehicle: { fontSize: 14, color: '#6B7280' },
-  modalActions: { flexDirection: 'row', justifyContent: 'flex-end', gap: 12 },
+  modalActions: { flexDirection: 'row', justifyContent: 'flex-end' },
   cancelText: { color: '#6B7280', fontWeight: '600' },
+  modalActionSpacing: { marginLeft: 12 },
   assignBtn: { backgroundColor: '#10B981', paddingHorizontal: 24, paddingVertical: 12, borderRadius: 12 },
   assignBtnDisabled: { backgroundColor: '#9CA3AF' },
   assignText: { color: '#fff', fontWeight: '600', fontSize: 16 },

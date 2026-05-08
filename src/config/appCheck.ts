@@ -3,7 +3,7 @@
  * Provides additional security layer for Firebase API calls
  */
 
-import { getAppCheck } from '@react-native-firebase/app-check';
+import getAppCheck from '@react-native-firebase/app-check';
 import { Platform } from 'react-native';
 
 /**

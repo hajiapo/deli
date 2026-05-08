@@ -4,7 +4,7 @@
  */
 
 import { getApp } from '@react-native-firebase/app';
-import { getFirestore } from '@react-native-firebase/firestore';
+import { collection, getDocs, getFirestore as getFirebaseFirestore } from '@react-native-firebase/firestore';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
 const PACKAGES_KEY = '@delivry:packages';
@@ -15,15 +15,15 @@ async function syncPackages() {
     
     // Get Firebase instances
     const app = getApp();
-    const db = getFirestore(app);
+    const db = getFirebaseFirestore(app);
     
     // Fetch all packages from Firestore
-    const snapshot = await db.collection('packages').get();
+    const snapshot = await getDocs(collection(db, 'packages'));
     
     console.log(`📦 Found ${snapshot.size} packages in Firestore`);
     
     const packages: any[] = [];
-    snapshot.forEach((doc) => {
+    snapshot.forEach((doc: any) => {
       const data = doc.data();
       packages.push({
         id: doc.id,

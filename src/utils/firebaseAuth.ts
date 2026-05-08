@@ -4,7 +4,7 @@
  */
 
 import { getAuth, getDb } from '../firebase/config';
-import { getFirestore, FieldValue } from '@react-native-firebase/firestore';
+import { doc, getDoc, getFirestore as getFirebaseFirestore, serverTimestamp } from '@react-native-firebase/firestore';
 
 export interface UserClaims {
   admin?: boolean;
@@ -152,7 +152,7 @@ export const createAdminUser = async (email: string, password: string) => {
     const db = getDb();
     await db.collection('admin_users').doc(user.uid).set({
       email: email,
-      createdAt: FieldValue.serverTimestamp(),
+      createdAt: serverTimestamp(),
       isActive: true,
     });
 
@@ -182,7 +182,7 @@ export const createDriverUser = async (email: string, password: string, driverId
     await db.collection('driver_auth').doc(user.uid).set({
       driverId: driverId,
       email: email,
-      createdAt: FieldValue.serverTimestamp(),
+      createdAt: serverTimestamp(),
       isActive: true,
     });
 
@@ -206,7 +206,7 @@ export const setAdminClaims = async (uid: string) => {
       admin: true,
       driver: false,
       driverId: null,
-      updatedAt: FieldValue.serverTimestamp(),
+      updatedAt: serverTimestamp(),
     });
 
     console.log('Admin claims set for user:', uid);
@@ -228,7 +228,7 @@ export const setDriverClaims = async (uid: string, driverId: string) => {
       admin: false,
       driver: true,
       driverId: driverId,
-      updatedAt: FieldValue.serverTimestamp(),
+      updatedAt: serverTimestamp(),
     });
 
     console.log('Driver claims set for user:', uid);
@@ -243,10 +243,11 @@ export const setDriverClaims = async (uid: string, driverId: string) => {
  */
 export const getUserClaimsFromFirestore = async (uid: string): Promise<UserClaims | null> => {
   try {
-    const db = getDb();
-    const docRef = db.collection('user_claims').doc(uid);
-    const docSnap = await docRef.get();
-    if (docSnap.exists) {
+    const { default: app } = require('@react-native-firebase/app');
+    const db = getFirebaseFirestore(app);
+    const docRef = doc(db, 'user_claims', uid);
+    const docSnap = await getDoc(docRef);
+    if (docSnap.exists()) {
       return docSnap.data() as UserClaims;
     }
     return null;
@@ -264,7 +265,7 @@ export const updateUserClaims = async (uid: string, claims: Partial<UserClaims>)
     const db = getDb();
     await db.collection('user_claims').doc(uid).update({
       ...claims,
-      updatedAt: FieldValue.serverTimestamp(),
+      updatedAt: serverTimestamp(),
     });
   } catch (error) {
     console.error('Error updating user claims:', error);

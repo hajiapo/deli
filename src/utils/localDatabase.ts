@@ -88,17 +88,17 @@ export const syncPackagesFromFirestore = async (driverId?: string, isAdmin = fal
     try {
       const { getApp } = require('@react-native-firebase/app');
       const { getAuth } = require('@react-native-firebase/auth');
-      const { getFirestore } = require('@react-native-firebase/firestore');
+      const { getFirestore: getFirebaseFirestore, collection, getDocs, query: firestoreQuery, where } = require('@react-native-firebase/firestore');
       
       const app = getApp();
-      const db = getFirestore(app);
+      const db = getFirebaseFirestore(app);
       
       // For admin, try to sync without auth check (if Firestore rules allow)
       if (isAdmin) {
         console.log('👑 Admin sync - attempting direct Firestore access');
         
         try {
-          const snapshot = await db.collection('packages').get();
+          const snapshot = await getDocs(collection(db, 'packages'));
           const packages: Package[] = [];
           
           snapshot.forEach((doc: any) => {
@@ -143,14 +143,15 @@ export const syncPackagesFromFirestore = async (driverId?: string, isAdmin = fal
       }
       
       // Use React Native Firebase Firestore v22 modular API
-      let query = db.collection('packages');
+      const packagesCollection = collection(db, 'packages');
+      let queryRef = packagesCollection;
       
       // Admin syncs all packages, drivers only sync their assigned + pending
       if (!isAdmin && driverId) {
-        query = query.where('assigned_to', 'in', [driverId, null, '']);
+        queryRef = firestoreQuery(packagesCollection, where('assigned_to', 'in', [driverId, null, '']));
       }
       
-      const snapshot = await query.get();
+      const snapshot = await getDocs(queryRef);
       const packages: Package[] = [];
       
       snapshot.forEach((doc: any) => {
@@ -177,16 +178,16 @@ export const syncDriversFromFirestore = async (): Promise<void> => {
     try {
       const { getApp } = require('@react-native-firebase/app');
       const { getAuth } = require('@react-native-firebase/auth');
-      const { getFirestore } = require('@react-native-firebase/firestore');
+      const { getFirestore: getFirebaseFirestore, collection, getDocs } = require('@react-native-firebase/firestore');
       
       const app = getApp();
-      const db = getFirestore(app);
+      const db = getFirebaseFirestore(app);
       
       // Try direct sync first (for admin without Firebase Auth)
       console.log('👑 Attempting direct driver sync from Firestore');
       
       try {
-        const snapshot = await db.collection('drivers').get();
+        const snapshot = await getDocs(collection(db, 'drivers'));
         const firebaseDrivers: Driver[] = [];
         
         snapshot.forEach((doc: any) => {
@@ -239,7 +240,7 @@ export const syncDriversFromFirestore = async (): Promise<void> => {
       }
       
       // Use React Native Firebase Firestore v22 modular API
-      const snapshot = await db.collection('drivers').get();
+      const snapshot = await getDocs(collection(db, 'drivers'));
       const firebaseDrivers: Driver[] = [];
       
       snapshot.forEach((doc: any) => {

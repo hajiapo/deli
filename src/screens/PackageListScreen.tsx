@@ -1,6 +1,7 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { View, Text, StyleSheet, FlatList, TouchableOpacity, RefreshControl, ActivityIndicator } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { useFocusEffect } from '@react-navigation/native';
 import { useLocalDatabase } from '../hooks/useLocalDatabase';
 import PackageCard from '../components/PackageCard';
 
@@ -18,6 +19,12 @@ export default function PackageListScreen({ navigation }: PackageListScreenProps
     console.log('📋 PackageListScreen mounted');
     console.log('📦 Packages loaded:', packages?.length || 0);
   }, [packages]);
+
+  useFocusEffect(
+    useCallback(() => {
+      refresh();
+    }, [refresh])
+  );
 
   const filteredPackages = filterStatus === 'all' 
     ? packages
@@ -98,6 +105,7 @@ export default function PackageListScreen({ navigation }: PackageListScreenProps
         </View>
       ) : (
         <FlatList
+          style={styles.list}
           data={filteredPackages}
           keyExtractor={(item) => item.id}
           contentContainerStyle={styles.listContent}
@@ -135,13 +143,14 @@ const styles = StyleSheet.create({
     flexWrap: 'wrap',
     padding: 12,
     backgroundColor: '#FFFFFF',
-    gap: 8,
   },
   filterBtn: {
     paddingHorizontal: 12,
     paddingVertical: 6,
     borderRadius: 16,
     backgroundColor: '#F3F4F6',
+    marginRight: 8,
+    marginBottom: 8,
   },
   filterBtnActive: {
     backgroundColor: '#3B82F6',
@@ -163,6 +172,7 @@ const styles = StyleSheet.create({
   },
   summaryText: { fontSize: 14, color: '#1E40AF' },
   summaryBold: { fontWeight: '800', fontSize: 18 },
+  list: { flex: 1 },
   
   center: { flex: 1, justifyContent: 'center', alignItems: 'center' },
   emptyText: { color: '#6B7280', fontSize: 16 },

@@ -197,14 +197,14 @@ export class SecureFirestore {
   static async getDocument(collection: string, docId: string): Promise<any> {
     // Use React Native Firebase v22 modular API
     const { getApp } = require('@react-native-firebase/app');
-    const { getFirestore } = require('@react-native-firebase/firestore');
+    const { getFirestore: getFirebaseFirestore, doc, getDoc } = require('@react-native-firebase/firestore');
     
     const app = getApp();
-    const db = getFirestore(app);
-    const docRef = db.collection(collection).doc(docId);
-    const docSnap = await docRef.get();
+    const db = getFirebaseFirestore(app);
+    const docRef = doc(db, collection, docId);
+    const docSnap = await getDoc(docRef);
     
-    if (!docSnap.exists) {
+    if (!docSnap.exists()) {
       return null;
     }
 
