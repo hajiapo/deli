@@ -1,0 +1,80 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Helper function to check if _lastModified is being updated
+    function hasLastModified() {
+      return request.resource.data._lastModified is timestamp || 
+             request.resource.data._lastModified is string;
+    }
+
+    // Helper function to check if it's a pre-stored driver ID
+    function isPreStoredDriverId(driverId) {
+      return driverId.matches('DRV-0[0-9][0-9]');
+    }
+
+    // Helper function to check if it's an admin-created driver ID
+    function isAdminCreatedDriverId(driverId) {
+      return driverId.matches('ADM-[0-9]{4}-[A-Z0-9]{4}');
+    }
+
+    // Packages collection rules
+    match /packages/{packageId} {
+      // Allow read for everyone (needed for offline mode)
+      allow read: if true;
+      
+      // Allow create/update with _lastModified field
+      allow create: if hasLastModified();
+      allow update: if hasLastModified();
+      
+      // Allow delete
+      allow delete: if true;
+    }
+
+    // Drivers collection rules
+    match /drivers/{driverId} {
+      // Allow read for everyone (needed for driver list)
+      allow read: if true;
+      
+      // Allow create for:
+      // 1. Auto-generated IDs (from addDoc) - any format
+      // 2. Admin-created IDs (ADM-XXXX-YYYY)
+      // 3. Pre-stored IDs (DRV-001 to DRV-020)
+      allow create: if true;
+      
+      // Allow update for all drivers
+      allow update: if true;
+      
+      // Allow delete
+      allow delete: if true;
+    }
+
+    // Settings collection (for admin PIN)
+    match /settings/{settingId} {
+      // Anyone can read settings
+      allow read: if true;
+      
+      // Only allow writes to admin settings with validation
+      allow write: if settingId == 'admin' && 
+                    request.resource.data.keys().hasAll(['pin_hash', 'updated_at']);
+    }
+
+    // Admin configuration collection
+    match /admin_config/{configId} {
+      // Allow read/write
+      allow read, write: if true;
+    }
+
+    // Sync metadata collection
+    match /sync_metadata/{metadataId} {
+      // Allow read/write for sync tracking
+      allow read, write: if true;
+    }
+
+    // Deny all other access
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}

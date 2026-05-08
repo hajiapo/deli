@@ -1,0 +1,70 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Helper function to check if _lastModified is being updated
+    function hasLastModified() {
+      return request.resource.data._lastModified is timestamp || 
+             request.resource.data._lastModified is string;
+    }
+
+    // Helper function to check if it's a pre-stored driver ID
+    function isPreStoredDriverId(driverId) {
+      return driverId.matches('DRV-0[0-9][0-9]');
+    }
+
+    // Packages collection rules
+    match /packages/{packageId} {
+      // Allow read for everyone (needed for offline mode)
+      allow read: if true;
+      
+      // Allow create/update with _lastModified field
+      allow create: if hasLastModified();
+      allow update: if hasLastModified();
+      
+      // Allow delete (admin only in app logic)
+      allow delete: if true;
+    }
+
+    // Drivers collection rules
+    match /drivers/{driverId} {
+      // Allow read for everyone (needed for driver list)
+      allow read: if true;
+      
+      // Allow create/update with validation
+      allow create: if request.resource.data.keys().hasAll(['name', 'phone', 'vehicle_type', 'pin_code', 'is_active', 'created_at']);
+      allow update: if true;
+      
+      // Allow delete
+      allow delete: if true;
+    }
+
+    // Settings collection (for admin PIN)
+    match /settings/{settingId} {
+      // Anyone can read settings
+      allow read: if true;
+      
+      // Only allow writes to admin settings with validation
+      allow write: if settingId == 'admin' && 
+                    request.resource.data.keys().hasAll(['pin_hash', 'updated_at']);
+    }
+
+    // Admin configuration collection
+    match /admin_config/{configId} {
+      // Allow read/write with validation
+      allow read, write: if true;
+    }
+
+    // Sync metadata collection
+    match /sync_metadata/{metadataId} {
+      // Allow read/write for sync tracking
+      allow read, write: if true;
+    }
+
+    // Deny all other access
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}

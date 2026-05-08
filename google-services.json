@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "191033164459",
+    "project_id": "anonymous-98bf3",
+    "storage_bucket": "anonymous-98bf3.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:191033164459:android:6f212425711a66c29b6dee",
+        "android_client_info": {
+          "package_name": "com.sihicham.delivry"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyDB64X2P6NMLf8xmhajmRlaBcWm9b9h_Hc"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

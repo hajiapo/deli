@@ -1,0 +1,9 @@
+{
+  "compilerOptions": {
+    "strict": true,
+    "skipLibCheck": true,
+    "moduleResolution": "bundler",
+    "esModuleInterop": true
+  },
+  "extends": "expo/tsconfig.base"
+}

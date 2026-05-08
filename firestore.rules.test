@@ -1,0 +1,29 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // TEMPORARY RULES FOR DEVELOPMENT ONLY
+    // Allows read/write without authentication
+    // DO NOT USE IN PRODUCTION
+    
+    match /drivers/{driverId} {
+      allow read, write: if true;
+    }
+    
+    match /packages/{packageId} {
+      allow read, write: if true;
+    }
+    
+    match /settings/{settingId} {
+      allow read, write: if true;
+    }
+    
+    match /admin_config/{configId} {
+      allow read, write: if true;
+    }
+    
+    match /sync_metadata/{metadataId} {
+      allow read, write: if true;
+    }
+  }
+}
