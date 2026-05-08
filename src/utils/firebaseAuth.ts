@@ -4,7 +4,7 @@
  */
 
 import { getAuth, getDb } from '../firebase/config';
-import firestore from '@react-native-firebase/firestore';
+import { getFirestore, FieldValue } from '@react-native-firebase/firestore';
 
 export interface UserClaims {
   admin?: boolean;
@@ -152,7 +152,7 @@ export const createAdminUser = async (email: string, password: string) => {
     const db = getDb();
     await db.collection('admin_users').doc(user.uid).set({
       email: email,
-      createdAt: firestore.FieldValue.serverTimestamp(),
+      createdAt: FieldValue.serverTimestamp(),
       isActive: true,
     });
 
@@ -182,7 +182,7 @@ export const createDriverUser = async (email: string, password: string, driverId
     await db.collection('driver_auth').doc(user.uid).set({
       driverId: driverId,
       email: email,
-      createdAt: firestore.FieldValue.serverTimestamp(),
+      createdAt: FieldValue.serverTimestamp(),
       isActive: true,
     });
 
@@ -206,7 +206,7 @@ export const setAdminClaims = async (uid: string) => {
       admin: true,
       driver: false,
       driverId: null,
-      updatedAt: firestore.FieldValue.serverTimestamp(),
+      updatedAt: FieldValue.serverTimestamp(),
     });
 
     console.log('Admin claims set for user:', uid);
@@ -228,7 +228,7 @@ export const setDriverClaims = async (uid: string, driverId: string) => {
       admin: false,
       driver: true,
       driverId: driverId,
-      updatedAt: firestore.FieldValue.serverTimestamp(),
+      updatedAt: FieldValue.serverTimestamp(),
     });
 
     console.log('Driver claims set for user:', uid);
@@ -264,7 +264,7 @@ export const updateUserClaims = async (uid: string, claims: Partial<UserClaims>)
     const db = getDb();
     await db.collection('user_claims').doc(uid).update({
       ...claims,
-      updatedAt: firestore.FieldValue.serverTimestamp(),
+      updatedAt: FieldValue.serverTimestamp(),
     });
   } catch (error) {
     console.error('Error updating user claims:', error);

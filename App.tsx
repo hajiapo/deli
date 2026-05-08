@@ -64,18 +64,19 @@ export default function App() {
 
       // 5. Initialize Firebase
       try {
-        // Initialize React Native Firebase
+        // Initialize React Native Firebase using modular API
         // This ensures Firebase is properly initialized before any sync operations
-        const app = require('@react-native-firebase/app').default;
+        const { getApp } = require('@react-native-firebase/app');
+        const app = getApp();
         console.log('✅ Firebase initialized:', app.name || 'default');
         
-        // Also initialize Firestore and Auth to ensure they're ready
-        const firestore = require('@react-native-firebase/firestore').default;
-        const auth = require('@react-native-firebase/auth').default;
+        // Also initialize Firestore and Auth to ensure they're ready using modular API
+        const { getFirestore } = require('@react-native-firebase/firestore');
+        const { getAuth } = require('@react-native-firebase/auth');
         
         // Just get instances to ensure they're initialized
-        const db = firestore();
-        const authInstance = auth();
+        const db = getFirestore();
+        const authInstance = getAuth();
         
         console.log('✅ Firestore and Auth initialized');
       } catch (fsError) {
