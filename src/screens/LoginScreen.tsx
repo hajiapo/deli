@@ -109,31 +109,43 @@ export default function LoginScreen({ navigation }: LoginScreenProps) {
 
       // For non-pre-stored IDs, try Firebase (custom IDs created by admin)
       try {
-        const { getFirestore, collection, doc, getDoc } = require('firebase/firestore');
+        // Use React Native Firebase API
+        const { getDb } = require('../firebase/config');
+        const db = getDb();
         
-        // Get the Firebase app from React Native Firebase
-        const { default: app } = require('@react-native-firebase/app');
-        const db = getFirestore(app);
-        const docSnap = await getDoc(doc(db, 'drivers', trimmedId));
-        if (docSnap.exists()) {
+        console.log('🔍 Searching for driver in Firebase:', trimmedId);
+        
+        const docSnap = await db.collection('drivers').doc(trimmedId).get();
+        
+        if (docSnap.exists) {
           const data = docSnap.data();
+          console.log('✅ Driver found in Firebase:', trimmedId);
+          console.log('📋 Driver data:', { is_active: data?.is_active, has_pin: !!data?.pin_code });
+          
           if (data?.is_active && data?.pin_code === trimmedDriverPin) {
-            
+            console.log('✅ PIN verified, logging in');
             loginAsDriver(trimmedId);
             navigation.replace('DelivererTask');
+          } else if (!data?.is_active) {
+            console.log('❌ Driver account is inactive');
+            setDriverError('Compte désactivé. Contactez l\'administrateur.');
+            ToastAndroid.show('Compte désactivé', ToastAndroid.SHORT);
           } else {
-            setDriverError('Code PIN incorrect ou compte inactif.');
-            ToastAndroid.show('Identifiants invalides', ToastAndroid.SHORT);
+            console.log('❌ PIN incorrect');
+            setDriverError('Code PIN incorrect.');
+            ToastAndroid.show('Code PIN incorrect', ToastAndroid.SHORT);
           }
         } else {
+          console.log('❌ Driver not found in Firebase:', trimmedId);
           setDriverIdError('ID Livreur introuvable');
           setDriverError('ID Livreur introuvable.');
           ToastAndroid.show('ID Livreur introuvable', ToastAndroid.SHORT);
         }
       } catch (firebaseError) {
         // Firebase failed
-        setDriverError('ID Livreur introuvable.');
-        ToastAndroid.show('ID Livreur introuvable', ToastAndroid.SHORT);
+        console.error('❌ Firebase error:', firebaseError);
+        setDriverError('Erreur de connexion Firebase. Vérifiez votre connexion.');
+        ToastAndroid.show('Erreur de connexion', ToastAndroid.SHORT);
       }
     } catch (error) {
       console.error(error);
@@ -185,8 +197,12 @@ export default function LoginScreen({ navigation }: LoginScreenProps) {
     // Trim PIN to remove any whitespace
     const trimmedAdminPin = adminPin.trim();
     
+    console.log('🔐 Admin login attempt');
+    console.log('📝 PIN length:', trimmedAdminPin.length);
+    
     // Validate PIN length
     if (trimmedAdminPin.length !== 8) {
+      console.log('❌ PIN length validation failed');
       setAdminPinError('Le code PIN doit contenir exactement 8 chiffres');
       ToastAndroid.show('Le code PIN doit contenir 8 chiffres', ToastAndroid.SHORT);
       return;
@@ -194,21 +210,26 @@ export default function LoginScreen({ navigation }: LoginScreenProps) {
 
     setLoading(true);
     try {
+      console.log('🔍 Verifying admin PIN...');
       // Verify admin PIN (works online and offline with cache)
       const isValid = await verifyAdminPin(trimmedAdminPin);
       
+      console.log('✅ PIN verification result:', isValid);
+      
       if (isValid) {
+        console.log('✅ Admin login successful');
         setAdminModalVisible(false);
         setAdminPin('');
         setAdminPinError('');
         unlockAdmin();
         navigation.replace('AdminDashboard');
       } else {
+        console.log('❌ Admin PIN incorrect');
         setAdminPinError('Code PIN incorrect');
         ToastAndroid.show('Code PIN incorrect', ToastAndroid.SHORT);
       }
     } catch (error) {
-      console.error('Admin login error:', error);
+      console.error('❌ Admin login error:', error);
       setAdminPinError('Erreur de connexion');
       ToastAndroid.show('Erreur de connexion', ToastAndroid.SHORT);
     } finally {

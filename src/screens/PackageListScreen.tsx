@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { View, Text, StyleSheet, FlatList, TouchableOpacity, RefreshControl, ActivityIndicator } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useLocalDatabase } from '../hooks/useLocalDatabase';
@@ -9,11 +9,18 @@ interface PackageListScreenProps {
 }
 
 export default function PackageListScreen({ navigation }: PackageListScreenProps) {
-  const { packages, drivers, loading, syncing, refresh } = useLocalDatabase({ isAdmin: true });
+  const [error, setError] = useState<string | null>(null);
   const [filterStatus, setFilterStatus] = useState<string>('all');
+  
+  const { packages = [], drivers = [], loading = false, syncing = false, refresh } = useLocalDatabase({ isAdmin: true });
+
+  useEffect(() => {
+    console.log('📋 PackageListScreen mounted');
+    console.log('📦 Packages loaded:', packages?.length || 0);
+  }, [packages]);
 
   const filteredPackages = filterStatus === 'all' 
-    ? packages 
+    ? packages
     : packages.filter(p => p.status === filterStatus);
 
   const statusOptions = ['all', 'Pending', 'Assigned', 'In Transit', 'Delivered', 'Returned'];
@@ -27,6 +34,25 @@ export default function PackageListScreen({ navigation }: PackageListScreenProps
     'Delivered': 'Livré',
     'Returned': 'Retourné'
   };
+
+  if (error) {
+    return (
+      <SafeAreaView style={styles.container}>
+        <View style={styles.errorContainer}>
+          <Text style={styles.errorText}>❌ Erreur: {error}</Text>
+          <TouchableOpacity 
+            style={styles.retryButton} 
+            onPress={() => {
+              setError(null);
+              navigation.goBack();
+            }}
+          >
+            <Text style={styles.retryButtonText}>Retour</Text>
+          </TouchableOpacity>
+        </View>
+      </SafeAreaView>
+    );
+  }
 
   return (
     <SafeAreaView style={styles.container}>
@@ -141,4 +167,28 @@ const styles = StyleSheet.create({
   center: { flex: 1, justifyContent: 'center', alignItems: 'center' },
   emptyText: { color: '#6B7280', fontSize: 16 },
   listContent: { padding: 16 },
+  
+  errorContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 24,
+  },
+  errorText: {
+    fontSize: 16,
+    color: '#DC2626',
+    textAlign: 'center',
+    marginBottom: 16,
+  },
+  retryButton: {
+    backgroundColor: '#3B82F6',
+    paddingHorizontal: 24,
+    paddingVertical: 12,
+    borderRadius: 8,
+  },
+  retryButtonText: {
+    color: '#FFFFFF',
+    fontSize: 16,
+    fontWeight: '600',
+  },
 });

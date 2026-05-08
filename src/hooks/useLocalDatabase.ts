@@ -183,9 +183,12 @@ export const useLocalDatabase = (options: UseLocalDatabaseOptions = {}) => {
       if (!isPreStored) {
         // Sync only this specific change immediately (not full refresh)
         try {
-          // Use React Native Firebase
-          const firestore = require('@react-native-firebase/firestore').default;
-          const db = firestore();
+          // Use React Native Firebase v22 modular API
+          const { getApp } = require('@react-native-firebase/app');
+          const { getFirestore } = require('@react-native-firebase/firestore');
+          
+          const app = getApp();
+          const db = getFirestore(app);
           
           await db.collection('packages').doc(packageId).update(updates);
           console.log(`✅ Package ${packageId} status synced: ${status}`);
@@ -243,9 +246,12 @@ export const useLocalDatabase = (options: UseLocalDatabaseOptions = {}) => {
 
       // Sync assignments immediately (batch update for efficiency)
       try {
-        // Use React Native Firebase
-        const firestore = require('@react-native-firebase/firestore').default;
-        const db = firestore();
+        // Use React Native Firebase v22 modular API
+        const { getApp } = require('@react-native-firebase/app');
+        const { getFirestore } = require('@react-native-firebase/firestore');
+        
+        const app = getApp();
+        const db = getFirestore(app);
         const batch = db.batch();
         for (const pkgId of packageIds) {
           const pkgRef = db.collection('packages').doc(pkgId);

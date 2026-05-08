@@ -83,13 +83,40 @@ export const syncPackagesFromFirestore = async (driverId?: string, isAdmin = fal
       return;
     }
     
-    // For non-pre-stored drivers, check Firebase Auth
-    // Use React Native Firebase
+    // For ADMIN or non-pre-stored drivers, try Firebase sync
+    // Admins can sync without Firebase Auth if Firestore rules allow
     try {
-      const auth = require('@react-native-firebase/auth').default;
-      const firestore = require('@react-native-firebase/firestore').default;
+      const { getApp } = require('@react-native-firebase/app');
+      const { getAuth } = require('@react-native-firebase/auth');
+      const { getFirestore } = require('@react-native-firebase/firestore');
       
-      const authInstance = auth();
+      const app = getApp();
+      const db = getFirestore(app);
+      
+      // For admin, try to sync without auth check (if Firestore rules allow)
+      if (isAdmin) {
+        console.log('👑 Admin sync - attempting direct Firestore access');
+        
+        try {
+          const snapshot = await db.collection('packages').get();
+          const packages: Package[] = [];
+          
+          snapshot.forEach((doc: any) => {
+            const data = doc.data() as any;
+            packages.push({ id: doc.id, ...data });
+          });
+          
+          await AsyncStorage.setItem(PACKAGES_KEY, JSON.stringify(packages));
+          console.log(`📥 Admin synced ${packages.length} packages from Firestore`);
+          return;
+        } catch (adminSyncError) {
+          console.log('⚠️ Admin direct sync failed, trying with auth:', adminSyncError);
+          // Fall through to auth-based sync
+        }
+      }
+      
+      // For non-admin or if admin direct sync failed, check Firebase Auth
+      const authInstance = getAuth(app);
       const currentUser = authInstance.currentUser;
       
       console.log('🔐 Firebase auth currentUser:', currentUser ? 'Yes' : 'No');
@@ -115,9 +142,7 @@ export const syncPackagesFromFirestore = async (driverId?: string, isAdmin = fal
         return;
       }
       
-      // Use React Native Firebase Firestore
-      const db = firestore();
-      
+      // Use React Native Firebase Firestore v22 modular API
       let query = db.collection('packages');
       
       // Admin syncs all packages, drivers only sync their assigned + pending
@@ -147,13 +172,55 @@ export const syncPackagesFromFirestore = async (driverId?: string, isAdmin = fal
 export const syncDriversFromFirestore = async (): Promise<void> => {
   try {
     // Check if we have Firebase Authentication
-    // Note: Only admins can sync drivers, and admins use Firebase Auth
-    // Use React Native Firebase
+    // Note: Only admins can sync drivers
+    // Try direct access first (if Firestore rules allow), then fall back to auth
     try {
-      const auth = require('@react-native-firebase/auth').default;
-      const firestore = require('@react-native-firebase/firestore').default;
+      const { getApp } = require('@react-native-firebase/app');
+      const { getAuth } = require('@react-native-firebase/auth');
+      const { getFirestore } = require('@react-native-firebase/firestore');
       
-      const authInstance = auth();
+      const app = getApp();
+      const db = getFirestore(app);
+      
+      // Try direct sync first (for admin without Firebase Auth)
+      console.log('👑 Attempting direct driver sync from Firestore');
+      
+      try {
+        const snapshot = await db.collection('drivers').get();
+        const firebaseDrivers: Driver[] = [];
+        
+        snapshot.forEach((doc: any) => {
+          const driverData = doc.data() as any;
+          // Only include active drivers from Firebase
+          const isActive = driverData.is_active !== undefined ? driverData.is_active : true;
+          if (isActive) {
+            firebaseDrivers.push({ id: doc.id, ...driverData });
+          }
+        });
+        
+        // Get existing local drivers
+        const localDrivers = await getDriversLocally();
+        
+        // Merge drivers: Firebase drivers take precedence, but keep local drivers that aren't in Firebase
+        const mergedDrivers: Driver[] = [...firebaseDrivers];
+        const firebaseIds = new Set(firebaseDrivers.map(d => d.id));
+        
+        localDrivers.forEach(localDriver => {
+          if (!firebaseIds.has(localDriver.id)) {
+            mergedDrivers.push(localDriver);
+          }
+        });
+        
+        await AsyncStorage.setItem(DRIVERS_KEY, JSON.stringify(mergedDrivers));
+        console.log(`📥 Synced ${firebaseDrivers.length} drivers from Firestore, total: ${mergedDrivers.length} drivers`);
+        return;
+      } catch (directSyncError) {
+        console.log('⚠️ Direct driver sync failed, trying with auth:', directSyncError);
+        // Fall through to auth-based sync
+      }
+      
+      // If direct sync failed, try with Firebase Auth
+      const authInstance = getAuth(app);
       const currentUser = authInstance.currentUser;
       
       if (!currentUser) {
@@ -171,9 +238,7 @@ export const syncDriversFromFirestore = async (): Promise<void> => {
         return;
       }
       
-      // Use React Native Firebase Firestore
-      const db = firestore();
-      
+      // Use React Native Firebase Firestore v22 modular API
       const snapshot = await db.collection('drivers').get();
       const firebaseDrivers: Driver[] = [];
       
@@ -269,9 +334,12 @@ export const createPackage = async (packageData: Omit<Package, 'id'>): Promise<v
     
     // Try immediate sync of this specific package only
     try {
-      // Use React Native Firebase
-      const firestore = require('@react-native-firebase/firestore').default;
-      const db = firestore();
+      // Use React Native Firebase v22 modular API
+      const { getApp } = require('@react-native-firebase/app');
+      const { getFirestore } = require('@react-native-firebase/firestore');
+      
+      const app = getApp();
+      const db = getFirestore(app);
       
       await db.collection('packages').doc(newPackage.id).set(newPackage);
       console.log(`✅ Package ${newPackage.id} synced immediately`);
@@ -348,9 +416,12 @@ export const processSyncQueue = async (): Promise<void> => {
     
     for (const operation of unsynced) {
       try {
-        // Use React Native Firebase
-        const firestore = require('@react-native-firebase/firestore').default;
-        const db = firestore();
+        // Use React Native Firebase v22 modular API
+        const { getApp } = require('@react-native-firebase/app');
+        const { getFirestore } = require('@react-native-firebase/firestore');
+        
+        const app = getApp();
+        const db = getFirestore(app);
         
         if (operation.type === 'create' && operation.collection === 'packages') {
           await db.collection('packages').doc(operation.data.id).set(operation.data);

@@ -195,15 +195,16 @@ export class SecureFirestore {
    * Read a document with permission check
    */
   static async getDocument(collection: string, docId: string): Promise<any> {
-    const { getFirestore, collection: firestoreCollection, doc, getDoc } = require('firebase/firestore');
+    // Use React Native Firebase v22 modular API
+    const { getApp } = require('@react-native-firebase/app');
+    const { getFirestore } = require('@react-native-firebase/firestore');
     
-    // Get the Firebase app from React Native Firebase
-    const { default: app } = require('@react-native-firebase/app');
+    const app = getApp();
     const db = getFirestore(app);
-    const docRef = doc(db, collection, docId);
-    const docSnap = await getDoc(docRef);
+    const docRef = db.collection(collection).doc(docId);
+    const docSnap = await docRef.get();
     
-    if (!docSnap.exists()) {
+    if (!docSnap.exists) {
       return null;
     }
 
