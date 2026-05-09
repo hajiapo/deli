@@ -13,7 +13,7 @@ export default function PackageListScreen({ navigation }: PackageListScreenProps
   const [error, setError] = useState<string | null>(null);
   const [filterStatus, setFilterStatus] = useState<string>('all');
   
-  const { packages = [], drivers = [], loading = false, syncing = false, refresh } = useLocalDatabase({ isAdmin: true });
+  const { packages = [], drivers = [], loading = false, syncing = false, refresh, assignPackageToDriver } = useLocalDatabase({ isAdmin: true });
 
   useEffect(() => {
     console.log('📋 PackageListScreen mounted');
@@ -25,6 +25,27 @@ export default function PackageListScreen({ navigation }: PackageListScreenProps
       refresh();
     }, [refresh])
   );
+
+  const handleAssignPackage = useCallback(async (packageId: string) => {
+    try {
+      // Navigate to driver selection screen or show driver picker
+      navigation.navigate('DriverList', { 
+        mode: 'assign', 
+        packageId,
+        onAssign: async (driverId: string) => {
+          await assignPackageToDriver([packageId], driverId);
+          navigation.goBack();
+        }
+      });
+    } catch (err: any) {
+      console.error('Error assigning package:', err);
+      setError(err?.message || 'Erreur lors de l\'assignation du colis');
+    }
+  }, [navigation, assignPackageToDriver]);
+
+  // Note: unassign is not implemented in useLocalDatabase currently.
+  // Keeping the handler removed to avoid type/runtime issues.
+
 
   const filteredPackages = filterStatus === 'all' 
     ? packages
@@ -110,7 +131,11 @@ export default function PackageListScreen({ navigation }: PackageListScreenProps
           keyExtractor={(item) => item.id}
           contentContainerStyle={styles.listContent}
           renderItem={({ item }) => (
-            <PackageCard pkg={item} drivers={drivers} />
+            <PackageCard 
+              pkg={item} 
+              drivers={drivers} 
+              onAssign={handleAssignPackage}
+            />
           )}
           refreshControl={
             <RefreshControl refreshing={syncing} onRefresh={refresh} colors={['#3B82F6']} />

@@ -165,8 +165,10 @@ export default function DelivererTaskScreen({ navigation }: DelivererTaskScreenP
   };
 
   const openReturnModal = (pkgId: string) => {
+    // Keep clean separation: only reset when opening a new package modal
     setSelectedPackageId(pkgId);
     setReturnReason('');
+    setReturnReasonError('');
     setReturnModalVisible(true);
   };
 
@@ -472,6 +474,13 @@ export default function DelivererTaskScreen({ navigation }: DelivererTaskScreenP
         <View style={styles.modalOverlay}>
           <View style={styles.modalContent}>
             <Text style={styles.modalTitle}>Raison du Retour</Text>
+            {selectedPackageId && (
+              <Text style={styles.errorText}>
+                {returnReason.trim()
+                  ? ''
+                  : 'Raison rapide: si colis introuvable / non répondant, indiquez-le ici'}
+              </Text>
+            )}
             <TextInput
               style={[styles.input, returnReasonError ? styles.inputError : null]}
               placeholder="Ex: Client absent, refusé..."

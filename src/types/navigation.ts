@@ -4,7 +4,7 @@ import { NativeStackScreenProps } from '@react-navigation/native-stack';
 export type RootStackParamList = {
   Login: undefined;
   AdminDashboard: undefined;
-  DriverList: undefined;
+  DriverList: { mode?: 'assign'; packageId?: string; onAssign?: (driverId: string) => void } | undefined;
   AddDriver: undefined;
   ModifyDriver: { driver: any };
   DelivererTask: undefined;

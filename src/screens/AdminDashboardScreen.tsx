@@ -36,33 +36,20 @@ const AdminDashboardScreen: React.FC<AdminDashboardScreenProps> = ({ navigation 
   const isFocused = useIsFocused();
   const [forceRefreshKey, setForceRefreshKey] = useState(0);
 
-  // Force refresh when screen comes into focus
+  // Refresh once when screen becomes focused.
+  // (Avoid multiple refreshes on mount+focus which can cause visible blinking)
   useEffect(() => {
-    if (isFocused) {
-      console.log('🔄 Dashboard focused, forcing refresh');
-      setForceRefreshKey(prev => prev + 1);
-    }
-  }, [isFocused]);
+    if (!isFocused) return;
 
-  // Load stats when forceRefreshKey changes
-  useEffect(() => {
     const loadStats = async () => {
       setStatsLoading(true);
       await refresh();
       setStatsLoading(false);
     };
-    loadStats();
-  }, [forceRefreshKey, refresh]);
 
-  // Also load on initial mount
-  useEffect(() => {
-    const loadInitialStats = async () => {
-      setStatsLoading(true);
-      await refresh();
-      setStatsLoading(false);
-    };
-    loadInitialStats();
-  }, []);
+    loadStats();
+  }, [isFocused, refresh]);
+
 
   // Use real-time stats from hook
   const totalPackages = packageStats?.total || 0;

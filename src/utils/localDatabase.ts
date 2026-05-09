@@ -306,9 +306,7 @@ export const getPackagesLocally = async (driverId?: string): Promise<Package[]> 
     
     // If driverId provided, filter packages assigned to this driver
     if (driverId) {
-      return allPackages.filter(pkg => 
-        pkg.assigned_to === driverId || pkg.status === 'Pending'
-      );
+      return allPackages.filter(pkg => pkg.assigned_to === driverId);
     }
     
     return allPackages;

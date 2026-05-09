@@ -54,6 +54,24 @@ export default function AdminPackageListScreen({ navigation }: AdminPackageListS
   const [deleteModalVisible, setDeleteModalVisible] = useState(false);
   const [packageToDelete, setPackageToDelete] = useState<any>(null);
 
+  // Edit package form states - all fields from create screen
+  const [editSenderName, setEditSenderName] = useState('');
+  const [editSenderCompany, setEditSenderCompany] = useState('');
+  const [editSenderPhone, setEditSenderPhone] = useState('');
+  const [editDateOfArrive, setEditDateOfArrive] = useState('');
+  const [editSupplementInfo, setEditSupplementInfo] = useState('');
+  const [editCustomerName, setEditCustomerName] = useState('');
+  const [editCustomerAddress, setEditCustomerAddress] = useState('');
+  const [editCustomerPhone, setEditCustomerPhone] = useState('');
+  const [editCustomerPhone2, setEditCustomerPhone2] = useState('');
+  const [editGpsLat, setEditGpsLat] = useState('');
+  const [editGpsLng, setEditGpsLng] = useState('');
+  const [editDescription, setEditDescription] = useState('');
+  const [editWeight, setEditWeight] = useState('');
+  const [editLimitDate, setEditLimitDate] = useState('');
+  const [editPrice, setEditPrice] = useState('');
+  const [editIsPaid, setEditIsPaid] = useState(false);
+
   // Translate status to French for display
   const translateStatus = (status: string): string => {
     const statusTranslations: Record<string, string> = {
@@ -145,6 +163,23 @@ export default function AdminPackageListScreen({ navigation }: AdminPackageListS
 
   const handleEditPackage = (pkg: any) => {
     setEditingPackage(pkg);
+    // Populate all edit form fields
+    setEditSenderName(pkg.sender_name || '');
+    setEditSenderCompany(pkg.sender_company || '');
+    setEditSenderPhone(pkg.sender_phone || '');
+    setEditDateOfArrive(pkg.date_of_arrive || '');
+    setEditSupplementInfo(pkg.supplement_info || '');
+    setEditCustomerName(pkg.customer_name || '');
+    setEditCustomerAddress(pkg.customer_address || '');
+    setEditCustomerPhone(pkg.customer_phone || '');
+    setEditCustomerPhone2(pkg.customer_phone_2 || '');
+    setEditGpsLat(pkg.gps_lat?.toString() || '');
+    setEditGpsLng(pkg.gps_lng?.toString() || '');
+    setEditDescription(pkg.description || '');
+    setEditWeight(pkg.weight || '');
+    setEditLimitDate(pkg.limit_date || '');
+    setEditPrice(pkg.price?.toString() || '');
+    setEditIsPaid(pkg.is_paid || false);
     setEditModalVisible(true);
   };
 
@@ -157,10 +192,10 @@ export default function AdminPackageListScreen({ navigation }: AdminPackageListS
     if (!packageToDelete) return;
     
     try {
-      const { getFirestore, collection, doc, deleteDoc } = require('firebase/firestore');
+      const { getApp } = require('@react-native-firebase/app');
+      const { getFirestore, doc, deleteDoc } = require('@react-native-firebase/firestore');
       
-      // Get the Firebase app from React Native Firebase
-      const { default: app } = require('@react-native-firebase/app');
+      const app = getApp();
       const db = getFirestore(app);
       await deleteDoc(doc(db, 'packages', packageToDelete.id));
       await refresh();
@@ -175,28 +210,45 @@ export default function AdminPackageListScreen({ navigation }: AdminPackageListS
 
   const saveEditedPackage = async () => {
     if (!editingPackage) return;
-    
+
     try {
-      const { getFirestore, collection, doc, updateDoc } = require('firebase/firestore');
-      
-      // Get the Firebase app from React Native Firebase
-      const { default: app } = require('@react-native-firebase/app');
-      const db = getFirestore(app);
-      await updateDoc(doc(db, 'packages', editingPackage.id), {
-        customer_name: editingPackage.customer_name,
-        customer_address: editingPackage.customer_address,
-        customer_phone: editingPackage.customer_phone,
-        price: parseFloat(editingPackage.price),
-        description: editingPackage.description,
-        weight: editingPackage.weight,
+      // Prepare all updated fields
+      const updates: any = {
+        sender_name: editSenderName || undefined,
+        sender_company: editSenderCompany || undefined,
+        sender_phone: editSenderPhone || undefined,
+        date_of_arrive: editDateOfArrive || undefined,
+        supplement_info: editSupplementInfo || undefined,
+        customer_name: editCustomerName || undefined,
+        customer_address: editCustomerAddress || undefined,
+        customer_phone: editCustomerPhone || undefined,
+        customer_phone_2: editCustomerPhone2 || undefined,
+        gps_lat: editGpsLat ? parseFloat(editGpsLat) : undefined,
+        gps_lng: editGpsLng ? parseFloat(editGpsLng) : undefined,
+        description: editDescription || undefined,
+        weight: editWeight || undefined,
+        limit_date: editLimitDate || undefined,
+        price: editIsPaid ? 0 : (parseFloat(editPrice) || 0),
+        is_paid: editIsPaid,
         _lastModified: new Date().toISOString()
-      });
+      };
+
+      // Update Firestore immediately for real-time sync to drivers
+      const { getApp } = require('@react-native-firebase/app');
+      const { getFirestore, doc, updateDoc } = require('@react-native-firebase/firestore');
       
+      const app = getApp();
+      const db = getFirestore(app);
+      await updateDoc(doc(db, 'packages', editingPackage.id), updates);
+
+      // Update local state immediately
       await refresh();
+
       Alert.alert('Succès', 'Colis modifié avec succès');
       setEditModalVisible(false);
       setEditingPackage(null);
     } catch (error) {
+      console.error('Error updating package:', error);
       Alert.alert('Erreur', 'Impossible de modifier le colis');
     }
   };
@@ -498,46 +550,188 @@ export default function AdminPackageListScreen({ navigation }: AdminPackageListS
                 <Text style={styles.actionBtnText}>🗑️</Text>
               </TouchableOpacity>
             </View>
-            <ScrollView>
+            <ScrollView style={{ maxHeight: 500 }}>
+              <Text style={styles.sectionTitle}>1. Informations Générales</Text>
+
               <View style={styles.filterGroup}>
-                <Text style={styles.filterLabel}>Nom Client</Text>
+                <Text style={styles.filterLabel}>Expéditeur (Nom)</Text>
                 <TextInput
                   style={styles.modalInput}
-                  value={editingPackage?.customer_name || ''}
-                  onChangeText={(text) => setEditingPackage({...editingPackage, customer_name: text})}
+                  value={editSenderName}
+                  onChangeText={setEditSenderName}
+                  placeholder="Ex: Jean Dupont"
                 />
               </View>
+
               <View style={styles.filterGroup}>
-                <Text style={styles.filterLabel}>Adresse</Text>
+                <Text style={styles.filterLabel}>Entreprise Expéditeur</Text>
                 <TextInput
                   style={styles.modalInput}
-                  value={editingPackage?.customer_address || ''}
-                  onChangeText={(text) => setEditingPackage({...editingPackage, customer_address: text})}
+                  value={editSenderCompany}
+                  onChangeText={setEditSenderCompany}
+                  placeholder="Ex: Boutique Paris"
                 />
               </View>
+
+              <View style={styles.row}>
+                <View style={[styles.filterGroup, { flex: 1, marginRight: 8 }]}>
+                  <Text style={styles.filterLabel}>Téléphone Expéditeur</Text>
+                  <TextInput
+                    style={styles.modalInput}
+                    value={editSenderPhone}
+                    onChangeText={setEditSenderPhone}
+                    placeholder="06..."
+                    keyboardType="phone-pad"
+                  />
+                </View>
+                <View style={[styles.filterGroup, { flex: 1, marginLeft: 8 }]}>
+                  <Text style={styles.filterLabel}>Date d'arrivée</Text>
+                  <TextInput
+                    style={styles.modalInput}
+                    value={editDateOfArrive}
+                    onChangeText={setEditDateOfArrive}
+                    placeholder="JJ/MM/AAAA"
+                  />
+                </View>
+              </View>
+
               <View style={styles.filterGroup}>
-                <Text style={styles.filterLabel}>Téléphone</Text>
+                <Text style={styles.filterLabel}>Infos Supplémentaires</Text>
                 <TextInput
                   style={styles.modalInput}
-                  value={editingPackage?.customer_phone || ''}
-                  onChangeText={(text) => setEditingPackage({...editingPackage, customer_phone: text})}
+                  value={editSupplementInfo}
+                  onChangeText={setEditSupplementInfo}
+                  placeholder="Ex: Informations..."
                 />
               </View>
+
+              <Text style={styles.sectionTitle}>2. Contact & Localisation</Text>
+
               <View style={styles.filterGroup}>
-                <Text style={styles.filterLabel}>Prix (DH)</Text>
+                <Text style={styles.filterLabel}>Nom du Client</Text>
                 <TextInput
                   style={styles.modalInput}
-                  value={editingPackage?.price?.toString() || ''}
-                  onChangeText={(text) => setEditingPackage({...editingPackage, price: parseFloat(text) || 0})}
-                  keyboardType="numeric"
+                  value={editCustomerName}
+                  onChangeText={setEditCustomerName}
+                  placeholder="Ex: Jean Dupont"
                 />
               </View>
+
+              <View style={styles.filterGroup}>
+                <Text style={styles.filterLabel}>Adresse de Livraison</Text>
+                <TextInput
+                  style={styles.modalInput}
+                  value={editCustomerAddress}
+                  onChangeText={setEditCustomerAddress}
+                  placeholder="Ex: 10 Rue de la Paix"
+                />
+              </View>
+
+              <View style={styles.row}>
+                <View style={[styles.filterGroup, { flex: 1, marginRight: 8 }]}>
+                  <Text style={styles.filterLabel}>Téléphone 1</Text>
+                  <TextInput
+                    style={styles.modalInput}
+                    value={editCustomerPhone}
+                    onChangeText={setEditCustomerPhone}
+                    placeholder="06..."
+                    keyboardType="phone-pad"
+                  />
+                </View>
+                <View style={[styles.filterGroup, { flex: 1, marginLeft: 8 }]}>
+                  <Text style={styles.filterLabel}>Téléphone 2</Text>
+                  <TextInput
+                    style={styles.modalInput}
+                    value={editCustomerPhone2}
+                    onChangeText={setEditCustomerPhone2}
+                    placeholder="07..."
+                    keyboardType="phone-pad"
+                  />
+                </View>
+              </View>
+
+              <View style={styles.row}>
+                <View style={[styles.filterGroup, { flex: 1, marginRight: 8 }]}>
+                  <Text style={styles.filterLabel}>GPS Latitude</Text>
+                  <TextInput
+                    style={styles.modalInput}
+                    value={editGpsLat}
+                    onChangeText={setEditGpsLat}
+                    placeholder="48.8566"
+                    keyboardType="numbers-and-punctuation"
+                  />
+                </View>
+                <View style={[styles.filterGroup, { flex: 1, marginLeft: 8 }]}>
+                  <Text style={styles.filterLabel}>GPS Longitude</Text>
+                  <TextInput
+                    style={styles.modalInput}
+                    value={editGpsLng}
+                    onChangeText={setEditGpsLng}
+                    placeholder="2.3522"
+                    keyboardType="numbers-and-punctuation"
+                  />
+                </View>
+              </View>
+
+              <Text style={styles.sectionTitle}>3. Détails du Colis</Text>
+
               <View style={styles.filterGroup}>
                 <Text style={styles.filterLabel}>Description</Text>
                 <TextInput
                   style={styles.modalInput}
-                  value={editingPackage?.description || ''}
-                  onChangeText={(text) => setEditingPackage({...editingPackage, description: text})}
+                  value={editDescription}
+                  onChangeText={setEditDescription}
+                  placeholder="Ex: Vêtements fragiles"
+                />
+              </View>
+
+              <View style={styles.row}>
+                <View style={[styles.filterGroup, { flex: 1, marginRight: 8 }]}>
+                  <Text style={styles.filterLabel}>Poids</Text>
+                  <TextInput
+                    style={styles.modalInput}
+                    value={editWeight}
+                    onChangeText={setEditWeight}
+                    placeholder="Ex: 2.5kg"
+                  />
+                </View>
+                <View style={[styles.filterGroup, { flex: 1, marginLeft: 8 }]}>
+                  <Text style={styles.filterLabel}>Date Limite</Text>
+                  <TextInput
+                    style={styles.modalInput}
+                    value={editLimitDate}
+                    onChangeText={setEditLimitDate}
+                    placeholder="JJ/MM/AAAA"
+                  />
+                </View>
+              </View>
+
+              <Text style={styles.sectionTitle}>4. Facturation</Text>
+
+              <View style={styles.filterGroup}>
+                <Text style={styles.filterLabel}>Montant (DH) {!editIsPaid && '*'}</Text>
+                <TextInput
+                  style={[styles.modalInput, editIsPaid && styles.inputDisabled]}
+                  value={editPrice}
+                  onChangeText={setEditPrice}
+                  placeholder="Ex: 50.00"
+                  keyboardType="numeric"
+                  editable={!editIsPaid}
+                />
+                {editIsPaid && <Text style={styles.disabledNote}>Montant non requis si déjà payé</Text>}
+              </View>
+
+              <View style={styles.switchGroup}>
+                <Text style={styles.filterLabel}>Déjà Payé (Pas de COD)</Text>
+                <Switch
+                  value={editIsPaid}
+                  onValueChange={(value) => {
+                    setEditIsPaid(value);
+                    if (value) {
+                      setEditPrice('0');
+                    }
+                  }}
+                  trackColor={{ false: '#D1D5DB', true: '#10B981' }}
                 />
               </View>
             </ScrollView>
@@ -762,7 +956,8 @@ const styles = StyleSheet.create({
     backgroundColor: '#fff',
     padding: 24,
     borderRadius: 12,
-    minWidth: 300,
+    minWidth: 350,
+    maxHeight: '90%',
   },
   modalTitle: {
     fontSize: 18,
@@ -831,5 +1026,16 @@ const styles = StyleSheet.create({
   },
   driverName: { fontSize: 16, fontWeight: '600', color: '#111827' },
   driverVehicleType: { fontSize: 14, color: '#6B7280' },
+
+  // Additional styles for edit modal
+  sectionTitle: { fontSize: 18, fontWeight: '800', color: '#1F2937', marginTop: 16, marginBottom: 16 },
+  row: { flexDirection: 'row', justifyContent: 'space-between' },
+  switchGroup: {
+    flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
+    marginBottom: 32, backgroundColor: '#FFFFFF', padding: 16, borderRadius: 12,
+    borderWidth: 1, borderColor: '#D1D5DB',
+  },
+  inputDisabled: { backgroundColor: '#F3F4F6', color: '#9CA3AF' },
+  disabledNote: { fontSize: 11, color: '#6B7280', marginTop: 4, fontStyle: 'italic' },
 });
 

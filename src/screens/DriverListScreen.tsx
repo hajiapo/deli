@@ -10,12 +10,18 @@ import {
   responsiveSize 
 } from '../utils/responsive';
 
-export default function DriverListScreen({ navigation }: DriverListScreenProps) {
+export default function DriverListScreen({ navigation, route }: DriverListScreenProps) {
   const [drivers, setDrivers] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [firebaseAvailable, setFirebaseAvailable] = useState(true);
   const [showPrestoredDrivers, setShowPrestoredDrivers] = useState(false);
   const [prestoredDrivers, setPrestoredDrivers] = useState<any[]>([]);
+  const [assigning, setAssigning] = useState(false);
+
+  // Check if we're in assignment mode
+  const isAssignmentMode = route?.params?.mode === 'assign';
+  const packageId = route?.params?.packageId;
+  const onAssign = route?.params?.onAssign;
 
   useEffect(() => {
     let isSubscribed = true;
@@ -266,6 +272,22 @@ export default function DriverListScreen({ navigation }: DriverListScreenProps) 
     }
   };
 
+  const handleAssignToDriver = async (driverId: string) => {
+    if (!packageId || !onAssign) return;
+    
+    setAssigning(true);
+    try {
+      await onAssign(driverId);
+      Alert.alert("Succès", "Colis assigné avec succès");
+      navigation.goBack();
+    } catch (error) {
+      console.error('Error assigning package:', error);
+      Alert.alert("Erreur", "Impossible d'assigner le colis");
+    } finally {
+      setAssigning(false);
+    }
+  };
+
   const loadPrestoredDrivers = () => {
     // Load all prestored drivers from credentials
     const allPrestored = DRIVER_CREDENTIALS.map(d => ({
@@ -281,6 +303,7 @@ export default function DriverListScreen({ navigation }: DriverListScreenProps) 
     setPrestoredDrivers(allPrestored);
     setShowPrestoredDrivers(true);
   };
+
 
   const activatePrestoredDriver = (driverId: string) => {
     const { activateDriverId } = require('../config/credentials');
@@ -320,21 +343,37 @@ export default function DriverListScreen({ navigation }: DriverListScreenProps) 
       </View>
       
       {/* Action Buttons */}
-      <View style={styles.actionButtons}>
-        <TouchableOpacity 
-          style={[styles.actionButton, styles.modifyButton]}
-          onPress={() => handleModifyDriver(item)}
-        >
-          <Text style={styles.actionButtonText}>✏️ Modifier</Text>
-        </TouchableOpacity>
-        
-        <TouchableOpacity 
-          style={[styles.actionButton, styles.removeButton]}
-          onPress={() => handleRemoveDriver(item)}
-        >
-          <Text style={styles.actionButtonText}>🗑️ Supprimer</Text>
-        </TouchableOpacity>
-      </View>
+      {isAssignmentMode ? (
+        <View style={styles.actionButtons}>
+          <TouchableOpacity 
+            style={[styles.actionButton, styles.modifyButton, assigning && { opacity: 0.6 }]}
+            onPress={() => handleAssignToDriver(item.id)}
+            disabled={assigning}
+          >
+            {assigning ? (
+              <ActivityIndicator size="small" color="#FFFFFF" />
+            ) : (
+              <Text style={styles.actionButtonText}>🚚 Assigner</Text>
+            )}
+          </TouchableOpacity>
+        </View>
+      ) : (
+        <View style={styles.actionButtons}>
+          <TouchableOpacity 
+            style={[styles.actionButton, styles.modifyButton]}
+            onPress={() => handleModifyDriver(item)}
+          >
+            <Text style={styles.actionButtonText}>✏️ Modifier</Text>
+          </TouchableOpacity>
+          
+          <TouchableOpacity 
+            style={[styles.actionButton, styles.removeButton]}
+            onPress={() => handleRemoveDriver(item)}
+          >
+            <Text style={styles.actionButtonText}>🗑️ Supprimer</Text>
+          </TouchableOpacity>
+        </View>
+      )}
       
       {item.source === 'stored' && (
         <View style={styles.sourceIndicator}>

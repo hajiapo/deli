@@ -31,6 +31,7 @@ interface PackageCardProps {
   };
   drivers?: Array<{ id: string; name: string }>;
   onAssign?: (id: string) => void;
+  onUnassign?: (id: string) => void;
   onAccept?: (id: string) => void;
   onDeliver?: (id: string) => void;
   onReturn?: (id: string) => void;
@@ -38,7 +39,7 @@ interface PackageCardProps {
 }
 
 export default function PackageCard(props: PackageCardProps) {
-  const { pkg, drivers, onAssign, onAccept, onDeliver, onReturn, assigning } = props;
+  const { pkg, drivers, onAssign, onUnassign, onAccept, onDeliver, onReturn, assigning } = props;
   const status = pkg.status || 'Pending';
   const statusColor = getStatusColor(status);
   
@@ -106,13 +107,32 @@ export default function PackageCard(props: PackageCardProps) {
         <Text style={styles.name}>{customerName}</Text>
         <Text style={styles.address} numberOfLines={1}>{customerAddress}</Text>
         
-        {/* Assigned Driver */}
-        {assignedDriverName && (
-          <View style={styles.driverRow}>
-            <Text style={styles.driverLabel}>🚚 Assigné à:</Text>
-            <Text style={styles.driverName}>{assignedDriverName}</Text>
-          </View>
-        )}
+        {/* Driver Assignment Section */}
+        <View style={styles.assignmentSection}>
+          {assignedDriverName ? (
+            <View style={styles.assignedDriverContainer}>
+              <Text style={styles.driverLabel}>🚚 Assigné à: {assignedDriverName}</Text>
+              {onUnassign && (
+                <TouchableOpacity 
+                  style={styles.unassignBtn} 
+                  onPress={() => onUnassign(pkg.id)}
+                >
+                  <Text style={styles.unassignBtnText}>Annuler assignation</Text>
+                </TouchableOpacity>
+              )}
+            </View>
+          ) : (
+            onAssign && (
+              <TouchableOpacity 
+                style={[styles.assignBtn, assigning && styles.assignBtnDisabled]} 
+                onPress={() => onAssign(pkg.id)}
+                disabled={assigning}
+              >
+                {assigning ? <ActivityIndicator color="#FFFFFF" size="small" /> : <Text style={styles.assignBtnText}>Assigner à un chauffeur</Text>}
+              </TouchableOpacity>
+            )
+          )}
+        </View>
         
         {/* Description */}
         {pkg.description && (
@@ -199,14 +219,18 @@ export default function PackageCard(props: PackageCardProps) {
             </TouchableOpacity>
           )}
 
-          {status === 'In Transit' && onDeliver && onReturn && (
+          {status === 'In Transit' && (onReturn || onDeliver) && (
             <>
-              <TouchableOpacity style={styles.returnBtn} onPress={() => onReturn(pkg.id)}>
-                <Text style={styles.actionBtnText}>Retour</Text>
-              </TouchableOpacity>
-              <TouchableOpacity style={styles.deliverBtn} onPress={() => onDeliver(pkg.id)}>
-                <Text style={styles.actionBtnText}>Livré</Text>
-              </TouchableOpacity>
+              {onReturn && (
+                <TouchableOpacity style={styles.returnBtn} onPress={() => onReturn(pkg.id)}>
+                  <Text style={styles.actionBtnText}>Retour</Text>
+                </TouchableOpacity>
+              )}
+              {onDeliver && (
+                <TouchableOpacity style={styles.deliverBtn} onPress={() => onDeliver(pkg.id)}>
+                  <Text style={styles.actionBtnText}>Livré</Text>
+                </TouchableOpacity>
+              )}
             </>
           )}
         </View>
@@ -381,4 +405,32 @@ const styles = StyleSheet.create({
   deliverBtn: { backgroundColor: '#10B981', paddingHorizontal: responsiveSize(8, 10), paddingVertical: responsiveSize(6, 8), borderRadius: BORDER_RADIUS.sm },
   returnBtn: { backgroundColor: '#EF4444', paddingHorizontal: responsiveSize(8, 10), paddingVertical: responsiveSize(6, 8), borderRadius: BORDER_RADIUS.sm },
   actionBtnText: { color: '#FFFFFF', fontSize: FONTS.compact.tiny, fontWeight: '700' },
+  
+  // Assignment section styles
+  assignmentSection: { marginTop: SPACING.sm },
+  assignedDriverContainer: { 
+    backgroundColor: '#EFF6FF', 
+    padding: responsiveSize(8, 10), 
+    borderRadius: BORDER_RADIUS.sm,
+    borderLeftWidth: 3,
+    borderLeftColor: '#3B82F6',
+  },
+  assignBtn: { 
+    backgroundColor: '#3B82F6', 
+    paddingHorizontal: responsiveSize(12, 16), 
+    paddingVertical: responsiveSize(8, 10), 
+    borderRadius: BORDER_RADIUS.sm,
+    alignItems: 'center',
+  },
+  assignBtnDisabled: { backgroundColor: '#9CA3AF' },
+  assignBtnText: { color: '#FFFFFF', fontSize: FONTS.compact.caption, fontWeight: '700' },
+  unassignBtn: { 
+    backgroundColor: '#EF4444', 
+    paddingHorizontal: responsiveSize(8, 10), 
+    paddingVertical: responsiveSize(4, 6), 
+    borderRadius: BORDER_RADIUS.sm,
+    marginTop: SPACING.xs,
+    alignSelf: 'flex-start',
+  },
+  unassignBtnText: { color: '#FFFFFF', fontSize: FONTS.compact.tiny, fontWeight: '600' },
 });
