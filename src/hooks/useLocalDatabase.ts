@@ -36,6 +36,8 @@ export const useLocalDatabase = (options: UseLocalDatabaseOptions = {}) => {
   const [syncing, setSyncing] = useState(false);
   const [lastSync, setLastSync] = useState<string | null>(null);
   const [pendingSyncCount, setPendingSyncCount] = useState(0);
+  const [isOnline, setIsOnline] = useState(true);
+  const [connectionError, setConnectionError] = useState<string | null>(null);
 
   // Load data from local storage and sync from Firestore on mount
   useEffect(() => {
@@ -109,6 +111,8 @@ export const useLocalDatabase = (options: UseLocalDatabaseOptions = {}) => {
   const syncWithFirestore = async () => {
     try {
       setSyncing(true);
+      setConnectionError(null);
+      setIsOnline(true);
       
       // Skip Firebase sync for pre-stored driver IDs (DRV-001 to DRV-020)
       const isPreStored = driverId ? isPreStoredDriverId(driverId) : false;
@@ -131,6 +135,16 @@ export const useLocalDatabase = (options: UseLocalDatabaseOptions = {}) => {
       await loadLocalData();
     } catch (error) {
       console.error('Sync error:', error);
+      setConnectionError('Connexion Firebase perdue');
+      setIsOnline(false);
+      
+      // Check if there are completed tasks that need reporting
+      const completedTasks = packages.filter(p => p.status === 'Delivered' || p.status === 'Returned');
+      if (completedTasks.length > 0) {
+        console.log(`🚨 Connection lost, triggering auto-report for ${completedTasks.length} completed tasks`);
+        // Trigger auto-report (this will be handled in the component)
+        // We'll add a callback prop for this
+      }
     } finally {
       setSyncing(false);
     }
@@ -526,6 +540,8 @@ export const useLocalDatabase = (options: UseLocalDatabaseOptions = {}) => {
     syncing,
     lastSync,
     pendingSyncCount,
+    isOnline,
+    connectionError,
     refresh,
     updatePackageStatus,
     assignPackageToDriver,

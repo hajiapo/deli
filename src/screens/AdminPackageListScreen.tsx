@@ -12,12 +12,15 @@ import {
   RefreshControl,
   Switch,
   ScrollView,
+  Linking,
+  Clipboard,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useFocusEffect } from '@react-navigation/native';
 import { useLocalDatabase } from '../hooks/useLocalDatabase';
 import { AdminPackageListScreenProps } from '../types/navigation';
 import ScannerModal from '../components/ScannerModal';
+import { parseDriverReport, autoUpdatePackagesFromReport, validateReport } from '../utils/driverReportParser';
 
 export default function AdminPackageListScreen({ navigation, route }: AdminPackageListScreenProps) {
   
@@ -65,6 +68,17 @@ export default function AdminPackageListScreen({ navigation, route }: AdminPacka
 
   // Scanner state
   const [scannerVisible, setScannerVisible] = useState(false);
+
+  // WhatsApp sharing state
+  const [whatsappModalVisible, setWhatsappModalVisible] = useState(false);
+  const [selectedDriverForWhatsapp, setSelectedDriverForWhatsapp] = useState('');
+  const [sharingViaWhatsapp, setSharingViaWhatsapp] = useState(false);
+
+  // Driver report monitoring state
+  const [reportMonitorModalVisible, setReportMonitorModalVisible] = useState(false);
+  const [reportText, setReportText] = useState('');
+  const [processingReport, setProcessingReport] = useState(false);
+  const [lastProcessedReport, setLastProcessedReport] = useState<any>(null);
 
   // Edit package form states - all fields from create screen
   const [editSenderName, setEditSenderName] = useState('');
@@ -198,6 +212,184 @@ export default function AdminPackageListScreen({ navigation, route }: AdminPacka
     }
   };
 
+  const shareViaWhatsApp = async () => {
+    if (!selectedDriverForWhatsapp || selectedPackageIds.size === 0) {
+      Alert.alert('Erreur', 'Sélectionnez un livreur et des colis.');
+      return;
+    }
+
+    setSharingViaWhatsapp(true);
+    try {
+      const selectedDriver = drivers.find((d: any) => d.id === selectedDriverForWhatsapp);
+      if (!selectedDriver) {
+        Alert.alert('Erreur', 'Livreur introuvable.');
+        return;
+      }
+
+      // Get selected packages details
+      const selectedPackages = packages.filter((pkg: any) => selectedPackageIds.has(pkg.id));
+      
+      // Format WhatsApp message
+      let message = `📦 *MISSION DE LIVRAISON* 🚚\n\n`;
+      message += `👤 *Livreur:* ${selectedDriver.name}\n`;
+      message += `🚗 *Véhicule:* ${selectedDriver.vehicle_type}\n`;
+      message += `📱 *Téléphone:* ${selectedDriver.phone || 'Non spécifié'}\n\n`;
+      message += `📋 *LISTE DES COLIS (${selectedPackages.length})*\n`;
+      message += `${'='.repeat(30)}\n\n`;
+
+      selectedPackages.forEach((pkg: any, index: number) => {
+        message += `${index + 1}. 📦 *${pkg.ref_number}*\n`;
+        message += `   👤 Client: ${pkg.customer_name || 'N/A'}\n`;
+        message += `   📍 Adresse: ${pkg.customer_address || 'N/A'}\n`;
+        message += `   📞 Téléphone: ${pkg.customer_phone || 'N/A'}\n`;
+        message += `   💰 Prix: ${pkg.is_paid ? 'Payé' : `${pkg.price || 0} DH`}\n`;
+        if (pkg.customer_phone_2) {
+          message += `   📞 Téléphone 2: ${pkg.customer_phone_2}\n`;
+        }
+        message += `   📝 Description: ${pkg.description || 'N/A'}\n\n`;
+      });
+
+      message += `\n${'='.repeat(30)}\n`;
+      message += `📊 *Total à encaisser:* ${selectedPackages.reduce((sum, pkg) => sum + (pkg.is_paid ? 0 : (pkg.price || 0)), 0)} DH\n\n`;
+      message += `⚠️ *Instructions:*\n`;
+      message += `• Veuillez confirmer la réception de cette mission\n`;
+      message += `• Appelez les clients avant la livraison\n`;
+      message += `• Signalez tout problème immédiatement\n\n`;
+      message += `*Merci pour votre travail!* 💪\n`;
+      message += `_Généré depuis Delivry App_`;
+
+      // Clean phone number for WhatsApp
+      const cleanPhone = selectedDriver.phone?.replace(/[^0-9]/g, '');
+      if (!cleanPhone) {
+        Alert.alert('Erreur', 'Le livreur n\'a pas de numéro de téléphone valide.');
+        return;
+      }
+
+      const whatsappUrl = `https://wa.me/${cleanPhone}?text=${encodeURIComponent(message)}`;
+      
+      // Check if WhatsApp is available
+      const supported = await Linking.canOpenURL(whatsappUrl);
+      if (supported) {
+        await Linking.openURL(whatsappUrl);
+        setWhatsappModalVisible(false);
+        setSelectedDriverForWhatsapp('');
+        setSelectedPackageIds(new Set());
+      } else {
+        Alert.alert('WhatsApp non disponible', 'WhatsApp n\'est pas installé sur cet appareil.');
+      }
+    } catch (error) {
+      console.error('WhatsApp sharing error:', error);
+      Alert.alert('Erreur', 'Impossible de partager via WhatsApp.');
+    } finally {
+      setSharingViaWhatsapp(false);
+    }
+  };
+
+  // Process driver report function
+  const processDriverReport = async () => {
+    if (!reportText.trim()) {
+      Alert.alert('Erreur', 'Veuillez coller le rapport du livreur.');
+      return;
+    }
+
+    setProcessingReport(true);
+    try {
+      // Parse the driver report
+      const parsedReport = parseDriverReport(reportText);
+      
+      if (!parsedReport) {
+        Alert.alert('Erreur', 'Format du rapport invalide. Assurez-vous que c\'est un rapport de livreur valide.');
+        return;
+      }
+
+      // Validate the report
+      const warnings = validateReport(parsedReport);
+      
+      // Show report summary for confirmation
+      const confirmMessage = `Rapport reçu de ${parsedReport.driverName || parsedReport.driverId || 'Livreur inconnu'}\n\n` +
+        `📦 Tâches terminées: ${parsedReport.completedTasks.length}\n` +
+        `✅ Livrés: ${parsedReport.summary.delivered}\n` +
+        `⚠️ Retournés: ${parsedReport.summary.returned}\n` +
+        `💰 Cash collecté: ${parsedReport.financialSummary.cashCollected} DH\n\n` +
+        (warnings.length > 0 ? `⚠️ Avertissements:\n${warnings.join('\n')}\n\n` : '') +
+        `Voulez-vous mettre à jour automatiquement les statuts des colis?`;
+
+      Alert.alert(
+        '📋 Rapport de Livreur Détecté',
+        confirmMessage,
+        [
+          {
+            text: 'Annuler',
+            style: 'cancel',
+            onPress: () => setReportText('')
+          },
+          {
+            text: 'Mettre à jour',
+            onPress: async () => {
+              try {
+                const updateResult = await autoUpdatePackagesFromReport(parsedReport, packages);
+                
+                // Show result
+                Alert.alert(
+                  updateResult.success ? '✅ Mise à jour réussie' : '❌ Erreur',
+                  updateResult.message,
+                  [
+                    {
+                      text: 'OK',
+                      onPress: () => {
+                        setReportMonitorModalVisible(false);
+                        setReportText('');
+                        setLastProcessedReport({ ...updateResult, report: parsedReport });
+                        refresh(); // Refresh package list
+                      }
+                    }
+                  ]
+                );
+              } catch (error) {
+                console.error('Auto-update error:', error);
+                Alert.alert('Erreur', 'Échec de la mise à jour automatique.');
+              }
+            }
+          }
+        ]
+      );
+    } catch (error) {
+      console.error('Report processing error:', error);
+      Alert.alert('Erreur', 'Impossible de traiter le rapport.');
+    } finally {
+      setProcessingReport(false);
+    }
+  };
+
+  // Check clipboard for driver report
+  const checkClipboardForReport = async () => {
+    try {
+      const clipboardText = await Clipboard.getString();
+      
+      if (clipboardText && parseDriverReport(clipboardText)) {
+        Alert.alert(
+          '📋 Rapport détecté',
+          'Un rapport de livreur a été détecté dans votre presse-papiers. Voulez-vous le traiter?',
+          [
+            {
+              text: 'Non',
+              style: 'cancel'
+            },
+            {
+              text: 'Oui',
+              onPress: () => {
+                setReportText(clipboardText);
+                setReportMonitorModalVisible(true);
+              }
+            }
+          ]
+        );
+      }
+    } catch (error) {
+      console.error('Clipboard check error:', error);
+    }
+  };
+
   const handleEditPackage = (pkg: any) => {
     setEditingPackage(pkg);
     // Populate all edit form fields
@@ -309,11 +501,67 @@ export default function AdminPackageListScreen({ navigation, route }: AdminPacka
 
   const handleScan = (data: string) => {
     setScannerVisible(false);
+    
+    // Validate QR code data - reject URLs and invalid formats
+    if (!data || data.trim().length === 0) {
+      Alert.alert('Format invalide', 'Le QR code scanné est vide.');
+      return;
+    }
+    
+    // Reject URLs and web links
+    if (data.startsWith('http://') || data.startsWith('https://') || data.startsWith('www.')) {
+      Alert.alert('Format invalide', 'Les liens web ne sont pas supportés.');
+      return;
+    }
+    
+    let searchRef = data.trim();
+    let packageData: any = null;
+    
+    // Try to parse as JSON (in case QR is a full package JSON)
+    try {
+      const parsed = JSON.parse(data);
+      if (parsed.ref_number || parsed.ref) {
+        searchRef = String(parsed.ref_number || parsed.ref);
+        packageData = parsed;
+      } else {
+        Alert.alert('Format invalide', 'Le QR code scanné n\'est pas un colis valide.');
+        return;
+      }
+    } catch (e) {
+      // Not JSON - treat as plain reference number
+      // Validate reference number format (basic validation)
+      if (!/^PKG-\d+$/.test(searchRef) && !/^\d+$/.test(searchRef)) {
+        Alert.alert('Format invalide', 'Le QR code doit contenir un numéro de référence valide (ex: PKG-123456).');
+        return;
+      }
+    }
+    
+    // First, check if package exists
     const foundPkg = packages.find(
-      (p: any) => p.id === data || p.ref_number.toLowerCase() === data.toLowerCase()
+      (p: any) => p.id === searchRef || p.ref_number.toLowerCase() === searchRef.toLowerCase()
     );
+    
     if (foundPkg) {
+      // Package exists - show details
       openPackageDetails(foundPkg);
+    } else if (packageData) {
+      // Package doesn't exist but we have JSON data - navigate to AddPackageScreen with pre-filled data
+      Alert.alert(
+        'Nouveau Colis Détecté',
+        'Ce colis n\'existe pas dans la base de données. Voulez-vous le créer avec les données scannées ?',
+        [
+          { text: 'Annuler', style: 'cancel' },
+          { 
+            text: 'Créer', 
+            onPress: () => {
+              // Navigate to AddPackageScreen with pre-filled data
+              navigation.navigate('AddPackage', { 
+                scannedData: packageData 
+              });
+            }
+          }
+        ]
+      );
     } else {
       Alert.alert('Introuvable', 'Ce colis n\'existe pas.');
     }
@@ -572,6 +820,21 @@ export default function AdminPackageListScreen({ navigation, route }: AdminPacka
                   </TouchableOpacity>
 
                   <TouchableOpacity
+                    style={[styles.bulkAssignBtn, { backgroundColor: '#10B981' }]}
+                    onPress={checkClipboardForReport}
+                  >
+                    <Text style={styles.bulkAssignText}>📋 Traiter Rapport</Text>
+                  </TouchableOpacity>
+
+                  <TouchableOpacity
+                    style={[styles.bulkAssignBtn, { backgroundColor: '#25D366' }]}
+                    onPress={() => setWhatsappModalVisible(true)}
+                    disabled={selectedPackageIds.size === 0}
+                  >
+                    <Text style={styles.bulkAssignText}>Partager via WhatsApp</Text>
+                  </TouchableOpacity>
+
+                  <TouchableOpacity
                     style={[styles.bulkAssignBtn, { backgroundColor: '#8B5CF6' }]}
                     onPress={() => {
                       const ids = Array.from(selectedPackageIds);
@@ -658,6 +921,110 @@ export default function AdminPackageListScreen({ navigation, route }: AdminPacka
                   <ActivityIndicator color="#fff" />
                 ) : (
                   <Text style={styles.assignText}>Assigner</Text>
+                )}
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
+
+      {/* WhatsApp Sharing Modal */}
+      <Modal visible={whatsappModalVisible} transparent animationType="fade">
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalContent}>
+            <Text style={styles.modalTitle}>Partager via WhatsApp</Text>
+            <Text style={styles.modalSubtitle}>
+              Sélectionnez un livreur pour partager {selectedPackageIds.size} colis
+            </Text>
+            <ScrollView style={styles.driverList}>
+              {drivers.map((driver: any) => (
+                <TouchableOpacity
+                  key={driver.id}
+                  style={[
+                    styles.driverOption,
+                    selectedDriverForWhatsapp === driver.id && styles.driverOptionActive
+                  ]}
+                  onPress={() => setSelectedDriverForWhatsapp(driver.id)}
+                >
+                  <View style={styles.driverInfo}>
+                    <Text style={styles.driverName}>{driver.name}</Text>
+                    <Text style={styles.driverVehicle}>{driver.vehicle_type}</Text>
+                    <Text style={styles.driverPhone}>📱 {driver.phone || 'Non spécifié'}</Text>
+                  </View>
+                  <View style={[
+                    styles.driverRadio,
+                    selectedDriverForWhatsapp === driver.id && styles.driverRadioActive
+                  ]}>
+                    {selectedDriverForWhatsapp === driver.id && <Text style={styles.radioDot}>●</Text>}
+                  </View>
+                </TouchableOpacity>
+              ))}
+            </ScrollView>
+            <View style={styles.modalActions}>
+              <TouchableOpacity 
+                style={styles.cancelBtn}
+                onPress={() => {
+                  setWhatsappModalVisible(false);
+                  setSelectedDriverForWhatsapp('');
+                }}
+              >
+                <Text style={styles.cancelText}>Annuler</Text>
+              </TouchableOpacity>
+              <TouchableOpacity 
+                style={[styles.assignBtn, { backgroundColor: '#25D366' }, (!selectedDriverForWhatsapp || sharingViaWhatsapp) && styles.assignBtnDisabled]}
+                onPress={shareViaWhatsApp}
+                disabled={!selectedDriverForWhatsapp || sharingViaWhatsapp}
+              >
+                {sharingViaWhatsapp ? (
+                  <ActivityIndicator color="#fff" />
+                ) : (
+                  <Text style={styles.assignText}>📤 Partager</Text>
+                )}
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
+
+      {/* Driver Report Monitoring Modal */}
+      <Modal visible={reportMonitorModalVisible} transparent animationType="fade">
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalContent}>
+            <Text style={styles.modalTitle}>📋 Traiter Rapport de Livreur</Text>
+            <Text style={styles.modalSubtitle}>
+              Collez le rapport WhatsApp du livreur pour mettre à jour automatiquement les statuts
+            </Text>
+            
+            <TextInput
+              style={styles.reportInput}
+              multiline
+              numberOfLines={8}
+              placeholder="Collez le rapport du livreur ici...\n\nExemple:\n📦 RAPPORT DE LIVRAISON AUTOMATIQUE 🚚\n👤 Livreur: DRV-001\n✅ Livré: 3 colis\n⚠️ Retourné: 1 colis\n..."
+              value={reportText}
+              onChangeText={setReportText}
+              editable={!processingReport}
+            />
+            
+            <View style={styles.modalActions}>
+              <TouchableOpacity 
+                style={styles.cancelBtn}
+                onPress={() => {
+                  setReportMonitorModalVisible(false);
+                  setReportText('');
+                }}
+                disabled={processingReport}
+              >
+                <Text style={styles.cancelText}>Annuler</Text>
+              </TouchableOpacity>
+              <TouchableOpacity 
+                style={[styles.assignBtn, { backgroundColor: '#10B981' }, (!reportText.trim() || processingReport) && styles.assignBtnDisabled]}
+                onPress={processDriverReport}
+                disabled={!reportText.trim() || processingReport}
+              >
+                {processingReport ? (
+                  <ActivityIndicator color="#fff" />
+                ) : (
+                  <Text style={styles.assignText}>🔄 Traiter</Text>
                 )}
               </TouchableOpacity>
             </View>
@@ -1268,6 +1635,42 @@ const styles = StyleSheet.create({
   detailLine: { fontSize: 14, color: '#111827', marginBottom: 8 },
   detailKey: { fontWeight: '800', color: '#1F2937' },
   loadingText: { fontSize: 14, fontWeight: '600', color: '#1E3A8A', marginTop: 8 },
+
+  // WhatsApp modal styles
+  modalSubtitle: { fontSize: 14, color: '#6B7280', textAlign: 'center', marginBottom: 16 },
+  driverInfo: { flex: 1, paddingVertical: 4 },
+  driverPhone: { fontSize: 12, color: '#6B7280', marginTop: 2 },
+  driverRadio: {
+    width: 24,
+    height: 24,
+    borderRadius: 12,
+    borderWidth: 2,
+    borderColor: '#D1D5DB',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  driverRadioActive: {
+    borderColor: '#25D366',
+    backgroundColor: '#25D366',
+  },
+  radioDot: {
+    color: '#FFFFFF',
+    fontSize: 12,
+    fontWeight: 'bold',
+  },
+  reportInput: {
+    backgroundColor: '#F9FAFB',
+    borderWidth: 1,
+    borderColor: '#D1D5DB',
+    borderRadius: 12,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    fontSize: 14,
+    color: '#111827',
+    textAlignVertical: 'top',
+    minHeight: 120,
+    marginBottom: 16,
+  },
 
 });
 

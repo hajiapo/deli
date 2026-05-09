@@ -22,6 +22,7 @@
     },
     "plugins": [
       "expo-dev-client",
+      "expo-camera",
       [
         "@react-native-firebase/app",
         {

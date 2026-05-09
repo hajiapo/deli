@@ -8,7 +8,7 @@ export type RootStackParamList = {
   AddDriver: undefined;
   ModifyDriver: { driver: any };
   DelivererTask: undefined;
-  AddPackage: undefined;
+  AddPackage: { scannedData?: any } | undefined;
   DriverCredentials: undefined;
   PackageList: undefined;
   AdminPackageList: { archivedOnly?: boolean } | undefined;

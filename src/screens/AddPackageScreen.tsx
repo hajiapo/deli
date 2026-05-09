@@ -3,27 +3,31 @@ import { View, Text, TextInput, TouchableOpacity, StyleSheet, Switch, ScrollView
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { AddPackageScreenProps } from '../types/navigation';
 import { validatePackageData, validateNumber, validateCoordinates, sanitizeInput } from '../utils/inputValidation';
+import { useRoute } from '@react-navigation/native';
 
 export default function AddPackageScreen({ navigation }: AddPackageScreenProps) {
+  const route = useRoute();
+  const scannedData = (route.params as any)?.scannedData;
+  
   // Core Identifiers
-  const [senderName, setSenderName] = useState('');
-  const [senderCompany, setSenderCompany] = useState('');
-  const [senderPhone, setSenderPhone] = useState('');
-  const [dateOfArrive, setDateOfArrive] = useState('');
-  const [supplementInfo, setSupplementInfo] = useState('');
+  const [senderName, setSenderName] = useState(scannedData?.sender_name || '');
+  const [senderCompany, setSenderCompany] = useState(scannedData?.sender_company || '');
+  const [senderPhone, setSenderPhone] = useState(scannedData?.sender_phone || '');
+  const [dateOfArrive, setDateOfArrive] = useState(scannedData?.date_of_arrive || '');
+  const [supplementInfo, setSupplementInfo] = useState(scannedData?.supplement_info || '');
   
   // Customer Info
-  const [customerName, setCustomerName] = useState('');
-  const [address, setAddress] = useState('');
-  const [phone1, setPhone1] = useState('');
-  const [phone2, setPhone2] = useState('');
+  const [customerName, setCustomerName] = useState(scannedData?.customer_name || '');
+  const [address, setAddress] = useState(scannedData?.customer_address || '');
+  const [phone1, setPhone1] = useState(scannedData?.customer_phone || '');
+  const [phone2, setPhone2] = useState(scannedData?.customer_phone_2 || '');
   
   // Package Details
-  const [weight, setWeight] = useState('');
-  const [description, setDescription] = useState('');
-  const [limitDate, setLimitDate] = useState('');
-  const [price, setPrice] = useState('');
-  const [isPaid, setIsPaid] = useState(false);
+  const [weight, setWeight] = useState(scannedData?.weight || '');
+  const [description, setDescription] = useState(scannedData?.description || '');
+  const [limitDate, setLimitDate] = useState(scannedData?.limit_date || '');
+  const [price, setPrice] = useState(scannedData?.price?.toString() || '');
+  const [isPaid, setIsPaid] = useState(scannedData?.is_paid || false);
 
   // Handle payment status change
   const handlePaymentStatusChange = (value: boolean) => {
@@ -34,10 +38,13 @@ export default function AddPackageScreen({ navigation }: AddPackageScreenProps) 
   };
   
   // GPS (Manual for now)
-  const [gpsLat, setGpsLat] = useState('');
-  const [gpsLng, setGpsLng] = useState('');
+  const [gpsLat, setGpsLat] = useState(scannedData?.gps_lat?.toString() || '');
+  const [gpsLng, setGpsLng] = useState(scannedData?.gps_lng?.toString() || '');
 
   const [loading, setLoading] = useState(false);
+
+  // Show indicator if data was scanned
+  const isFromScan = !!scannedData;
 
   const handleAddPackage = async () => {
     // Sanitize all inputs first
@@ -147,7 +154,10 @@ export default function AddPackageScreen({ navigation }: AddPackageScreenProps) 
           <TouchableOpacity onPress={() => navigation.goBack()} disabled={loading}>
             <Text style={styles.backText}>← Retour</Text>
           </TouchableOpacity>
-          <Text style={styles.headerTitle}>Nouveau Colis</Text>
+          <View style={styles.headerTitleContainer}>
+            <Text style={styles.headerTitle}>Nouveau Colis</Text>
+            {isFromScan && <Text style={styles.scanIndicator}>📷 Données scannées</Text>}
+          </View>
           <View style={{ width: 50 }} />
         </View>
 
@@ -272,8 +282,13 @@ const styles = StyleSheet.create({
     flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
     padding: 20, backgroundColor: '#FFFFFF', borderBottomWidth: 1, borderBottomColor: '#E5E7EB',
   },
+  headerTitleContainer: {
+    flex: 1,
+    alignItems: 'center',
+  },
   backText: { color: '#3B82F6', fontSize: 16, fontWeight: '600' },
   headerTitle: { fontSize: 18, fontWeight: '700', color: '#111827' },
+  scanIndicator: { fontSize: 12, color: '#10B981', fontWeight: '600', marginTop: 2 },
   scrollContent: { padding: 20 },
   sectionTitle: { fontSize: 18, fontWeight: '800', color: '#1F2937', marginTop: 16, marginBottom: 16 },
   row: { flexDirection: 'row', justifyContent: 'space-between' },

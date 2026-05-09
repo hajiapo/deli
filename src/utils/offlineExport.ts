@@ -16,6 +16,138 @@ import { Package } from '../types';
 // ============================================
 
 /**
+ * Generate driver-to-admin WhatsApp report (same format as admin-to-driver)
+ */
+export const generateDriverToAdminReport = (packages: Package[], driverName?: string, driverId?: string): string => {
+  const timestamp = new Date().toLocaleString('fr-FR');
+  
+  // Count by status
+  const delivered = packages.filter(p => p.status === 'Delivered');
+  const returned = packages.filter(p => p.status === 'Returned');
+  const inTransit = packages.filter(p => p.status === 'In Transit');
+  const assigned = packages.filter(p => p.status === 'Assigned');
+  
+  // Only include completed tasks (delivered/returned) in the report
+  const completedTasks = packages.filter(p => p.status === 'Delivered' || p.status === 'Returned');
+  
+  let message = `📦 *RAPPORT DE LIVRAISON AUTOMATIQUE* 🚚\n\n`;
+  message += `👤 *Livreur:* ${driverName || 'N/A'}\n`;
+  message += `🆔 *ID Livreur:* ${driverId || 'N/A'}\n`;
+  message += `📱 *Date du rapport:* ${timestamp}\n`;
+  message += `🚨 *Statut:* HORS LIGNE - Connexion Firebase perdue\n\n`;
+  
+  message += `📋 *RÉSUMÉ DES TÂCHES*\n`;
+  message += `${'='.repeat(30)}\n\n`;
+  message += `✅ *Livré:* ${delivered.length} colis\n`;
+  message += `⚠️ *Retourné:* ${returned.length} colis\n`;
+  message += `🚚 *En cours:* ${inTransit.length} colis\n`;
+  message += `📦 *Assigné:* ${assigned.length} colis\n\n`;
+  
+  if (completedTasks.length > 0) {
+    message += `📋 *LISTE DES TÂCHES TERMINÉES*\n`;
+    message += `${'='.repeat(30)}\n\n`;
+
+    completedTasks.forEach((pkg, index) => {
+      const isDelivered = pkg.status === 'Delivered';
+      const statusIcon = isDelivered ? '✅' : '⚠️';
+      const statusText = isDelivered ? 'LIVRÉ' : 'RETOURNÉ';
+      
+      message += `${index + 1}. ${statusIcon} *${pkg.ref_number}* - ${statusText}\n`;
+      message += `   👤 Client: ${pkg.customer_name || 'N/A'}\n`;
+      message += `   📍 Adresse: ${pkg.customer_address || 'N/A'}\n`;
+      message += `   📞 Téléphone: ${pkg.customer_phone || 'N/A'}\n`;
+      if (pkg.customer_phone_2) {
+        message += `   📞 Téléphone 2: ${pkg.customer_phone_2}\n`;
+      }
+      message += `   💰 Montant: ${pkg.is_paid ? 'Payé' : `${pkg.price || 0} DH`}\n`;
+      
+      if (isDelivered && pkg.delivered_at) {
+        message += `   📅 Livré le: ${new Date(pkg.delivered_at).toLocaleString('fr-FR', {day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit'})}\n`;
+      }
+      
+      if (!isDelivered && pkg.return_reason) {
+        message += `   🔙 Raison retour: ${pkg.return_reason}\n`;
+      }
+      
+      if (pkg.accepted_at) {
+        message += `   ✅ Accepté le: ${new Date(pkg.accepted_at).toLocaleString('fr-FR', {day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit'})}\n`;
+      }
+      
+      message += `\n`;
+    });
+
+    // Financial summary
+    const cashCollected = delivered.filter(p => !p.is_paid).reduce((sum, p) => sum + (p.price || 0), 0);
+    const totalRevenue = completedTasks.reduce((sum, p) => sum + (p.price || 0), 0);
+    
+    message += `${'='.repeat(30)}\n`;
+    message += `📊 *RÉSUMÉ FINANCIER*\n`;
+    message += `💰 *Cash collecté:* ${cashCollected.toFixed(2)} DH\n`;
+    message += `💵 *Revenu total:* ${totalRevenue.toFixed(2)} DH\n`;
+    message += `📦 *Colis payés:* ${completedTasks.filter(p => p.is_paid).length}\n`;
+    message += `💳 *Colis COD:* ${completedTasks.filter(p => !p.is_paid).length}\n\n`;
+  } else {
+    message += `ℹ️ *Aucune tâche terminée à signaler*\n\n`;
+  }
+
+  message += `${'='.repeat(30)}\n`;
+  message += `⚠️ *INSTRUCTIONS POUR L'ADMIN*\n`;
+  message += `• Veuillez mettre à jour manuellement les statuts dans Firebase\n`;
+  message += `• Les tâches terminées ci-dessus doivent être synchronisées\n`;
+  message += `• Le livreur est actuellement hors ligne\n\n`;
+  message += `*Rapport généré automatiquement depuis Delivry App*\n`;
+  message += `_Connexion perdue - ${timestamp}_`;
+
+  return message;
+};
+
+/**
+ * Send auto-report to admin via WhatsApp
+ */
+export const sendAutoReportToAdmin = async (packages: Package[], driverName?: string, driverId?: string, adminPhone?: string): Promise<void> => {
+  try {
+    const completedTasks = packages.filter(p => p.status === 'Delivered' || p.status === 'Returned');
+    
+    if (completedTasks.length === 0) {
+      console.log('No completed tasks to report');
+      return;
+    }
+    
+    const message = generateDriverToAdminReport(packages, driverName, driverId);
+    
+    if (adminPhone) {
+      // Send directly to admin WhatsApp
+      const cleanPhone = adminPhone.replace(/[^0-9]/g, '');
+      const whatsappUrl = `https://wa.me/${cleanPhone}?text=${encodeURIComponent(message)}`;
+      
+      const { Linking } = require('react-native');
+      const supported = await Linking.canOpenURL(whatsappUrl);
+      
+      if (supported) {
+        await Linking.openURL(whatsappUrl);
+        console.log(`Auto-report sent to admin via WhatsApp: ${adminPhone}`);
+      } else {
+        console.log('WhatsApp not available, using general share');
+        // Fallback to general share
+        await Share.open({
+          message: message,
+          title: 'Rapport de livraison automatique',
+        });
+      }
+    } else {
+      // No admin phone, use general share
+      await Share.open({
+        message: message,
+        title: 'Rapport de livraison automatique',
+      });
+    }
+  } catch (error) {
+    console.error('Auto-report error:', error);
+    throw error;
+  }
+};
+
+/**
  * Generate simple text format for WhatsApp/SMS - FOCUSED ON DELIVERY STATUS
  */
 export const generateTextReport = (packages: Package[], driverName?: string): string => {

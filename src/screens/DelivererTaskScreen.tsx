@@ -7,6 +7,7 @@ import { DelivererTaskScreenProps } from '../types/navigation';
 import { useLocalDatabase } from '../hooks/useLocalDatabase';
 import { updatePackage } from '../utils/localDatabase';
 import { showExportOptions } from '../utils/offlineExport';
+import { sendAutoReportToAdmin } from '../utils/offlineExport';
 import { getStatusColor } from '../utils/statusColors';
 import ScannerModal from '../components/ScannerModal';
 import { 
@@ -34,6 +35,8 @@ export default function DelivererTaskScreen({ navigation }: DelivererTaskScreenP
     syncing, 
     lastSync,
     pendingSyncCount,
+    isOnline,
+    connectionError,
     refresh,
     updatePackageStatus 
   } = useLocalDatabase({ driverId: driverId || undefined, isAdmin: false });
@@ -50,6 +53,10 @@ export default function DelivererTaskScreen({ navigation }: DelivererTaskScreenP
 
   // Expanded package state
   const [expandedPackageId, setExpandedPackageId] = useState<string | null>(null);
+
+  // Auto-report state
+  const [autoReportSent, setAutoReportSent] = useState(false);
+  const [adminPhone, setAdminPhone] = useState(''); // This could come from config or settings
 
   // Sort packages by status
   const packages = [...localPackages].sort((a, b) => {
@@ -224,12 +231,98 @@ export default function DelivererTaskScreen({ navigation }: DelivererTaskScreenP
     navigation.replace('Login');
   };
 
+  // Auto-report trigger when connection is lost
+  const triggerAutoReport = async () => {
+    if (!isOnline && !autoReportSent && connectionError) {
+      const completedTasks = packages.filter(p => p.status === 'Delivered' || p.status === 'Returned');
+      
+      if (completedTasks.length > 0) {
+        try {
+          console.log(`🚨 Triggering auto-report for ${completedTasks.length} completed tasks`);
+          
+          // Get driver name from auth store or use driverId
+          const driverName = driverId || 'Driver';
+          
+          await sendAutoReportToAdmin(
+            packages,
+            driverName,
+            driverId || undefined,
+            adminPhone // Empty for now, will use general share
+          );
+          
+          setAutoReportSent(true);
+          ToastAndroid.show('📤 Rapport automatique envoyé à l\'admin', ToastAndroid.LONG);
+          
+          Alert.alert(
+            '📤 Rapport envoyé',
+            `Rapport de livraison automatique envoyé pour ${completedTasks.length} tâches terminées.\n\nVeuillez contacter l\'admin pour confirmer la réception.`,
+            [{ text: 'OK', style: 'default' }]
+          );
+        } catch (error) {
+          console.error('Auto-report failed:', error);
+          ToastAndroid.show('❌ Échec de l\'envoi du rapport', ToastAndroid.SHORT);
+        }
+      }
+    }
+  };
+
+  // Effect to trigger auto-report when connection is lost
+  useEffect(() => {
+    if (!isOnline && connectionError && !autoReportSent) {
+      // Add a small delay to ensure all data is loaded
+      const timer = setTimeout(() => {
+        triggerAutoReport();
+      }, 2000);
+      
+      return () => clearTimeout(timer);
+    }
+    
+    // Reset auto-report flag when connection is restored
+    if (isOnline && autoReportSent) {
+      setAutoReportSent(false);
+    }
+  }, [isOnline, connectionError, autoReportSent, packages]);
+
   const handleScan = (data: string) => {
     setScannerVisible(false);
     
+    // Validate QR code data - reject URLs and invalid formats
+    if (!data || data.trim().length === 0) {
+      Alert.alert('Format invalide', 'Le QR code scanné est vide.');
+      return;
+    }
+    
+    // Reject URLs and web links
+    if (data.startsWith('http://') || data.startsWith('https://') || data.startsWith('www.')) {
+      Alert.alert('Format invalide', 'Les liens web ne sont pas supportés.');
+      return;
+    }
+    
+    let searchRef = data.trim();
+    
+    // Try to parse as JSON (in case QR is a full package JSON)
+    try {
+      const parsed = JSON.parse(data);
+      if (parsed.ref_number) {
+        searchRef = String(parsed.ref_number);
+      } else if (parsed.ref) {
+        searchRef = String(parsed.ref);
+      } else {
+        Alert.alert('Format invalide', 'Le QR code scanné n\'est pas un colis valide.');
+        return;
+      }
+    } catch (e) {
+      // Not JSON - treat as plain reference number
+      // Validate reference number format (basic validation)
+      if (!/^PKG-\d+$/.test(searchRef) && !/^\d+$/.test(searchRef)) {
+        Alert.alert('Format invalide', 'Le QR code doit contenir un numéro de référence valide (ex: PKG-123456).');
+        return;
+      }
+    }
+    
     // Find package by ID or Ref Number
     const foundPkg = packages.find(
-      p => p.id === data || p.ref_number.toLowerCase() === data.toLowerCase()
+      p => p.id === searchRef || p.ref_number.toLowerCase() === searchRef.toLowerCase()
     );
 
     if (foundPkg) {
@@ -297,6 +390,11 @@ export default function DelivererTaskScreen({ navigation }: DelivererTaskScreenP
                   <ActivityIndicator size="small" color="#10B981" />
                   <Text style={styles.syncText}>Synchronisation...</Text>
                 </View>
+              ) : !isOnline ? (
+                <View style={styles.syncIndicator}>
+                  <Text style={styles.syncDot}>🚨</Text>
+                  <Text style={styles.syncText}>HORS LIGNE</Text>
+                </View>
               ) : pendingSyncCount > 0 ? (
                 <View style={styles.syncIndicator}>
                   <Text style={styles.syncDot}>⚠️</Text>
@@ -308,6 +406,9 @@ export default function DelivererTaskScreen({ navigation }: DelivererTaskScreenP
                   <Text style={styles.syncText}>Synchronisé</Text>
                 </View>
               ) : null}
+              {connectionError && (
+                <Text style={styles.connectionError}>{connectionError}</Text>
+              )}
             </View>
           </View>
           <View style={styles.headerActions}>
@@ -657,6 +758,12 @@ const styles = StyleSheet.create({
     color: '#9CA3AF', 
     fontSize: FONTS.responsive.small, 
     fontWeight: '500' 
+  },
+  connectionError: {
+    color: '#EF4444',
+    fontSize: FONTS.responsive.small,
+    fontWeight: '600',
+    marginTop: 2,
   },
   cashBox: { 
     backgroundColor: '#10B981', 
