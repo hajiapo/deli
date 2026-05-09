@@ -1,4 +1,4 @@
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useEffect, useMemo } from 'react';
 import {
   View,
   Text,
@@ -18,9 +18,9 @@ import { useFocusEffect } from '@react-navigation/native';
 import { useLocalDatabase } from '../hooks/useLocalDatabase';
 import { AdminPackageListScreenProps } from '../types/navigation';
 
-export default function AdminPackageListScreen({ navigation }: AdminPackageListScreenProps) {
+export default function AdminPackageListScreen({ navigation, route }: AdminPackageListScreenProps) {
   
-  const { packages, drivers, loading, refresh } = useLocalDatabase({ isAdmin: true });
+  const { packages, drivers, loading, refresh, archivePackages, unarchivePackages } = useLocalDatabase({ isAdmin: true });
   const [refreshing, setRefreshing] = useState(false);
 
   const onRefresh = useCallback(async () => {
@@ -38,7 +38,9 @@ export default function AdminPackageListScreen({ navigation }: AdminPackageListS
   // Filter states
   const [searchQuery, setSearchQuery] = useState('');
   const [filterStatus, setFilterStatus] = useState('all');
+  const showArchived = !!route?.params?.archivedOnly;
   const [filterDate, setFilterDate] = useState('all'); // 'all', 'today', 'week'
+  const archivedStatusOptions = ['archived'] as const;
 
   // Selection
   const [selectedPackageIds, setSelectedPackageIds] = useState<Set<string>>(new Set());
@@ -48,6 +50,12 @@ export default function AdminPackageListScreen({ navigation }: AdminPackageListS
   const [statusPickerVisible, setStatusPickerVisible] = useState(false);
   const [datePickerVisible, setDatePickerVisible] = useState(false);
   
+  // Package Details modal state (real-time)
+  const [detailsModalVisible, setDetailsModalVisible] = useState(false);
+  const [selectedPackageForDetailsId, setSelectedPackageForDetailsId] = useState<string | null>(null);
+  const [selectedPackageForDetails, setSelectedPackageForDetails] = useState<any>(null);
+  const [detailsLoading, setDetailsLoading] = useState(false);
+
   // Edit/Delete states
   const [editingPackage, setEditingPackage] = useState<any>(null);
   const [editModalVisible, setEditModalVisible] = useState(false);
@@ -72,6 +80,20 @@ export default function AdminPackageListScreen({ navigation }: AdminPackageListS
   const [editPrice, setEditPrice] = useState('');
   const [editIsPaid, setEditIsPaid] = useState(false);
 
+  const formatDateTime = (value?: string): string => {
+    if (!value) return 'N/A';
+    const d = new Date(value);
+    if (Number.isNaN(d.getTime())) return value;
+
+    const dd = String(d.getDate()).padStart(2, '0');
+    const mm = String(d.getMonth() + 1).padStart(2, '0');
+    const yyyy = d.getFullYear();
+    const HH = String(d.getHours()).padStart(2, '0');
+    const MM = String(d.getMinutes()).padStart(2, '0');
+
+    return `${dd}/${mm}/${yyyy} ${HH}:${MM}`;
+  };
+
   // Translate status to French for display
   const translateStatus = (status: string): string => {
     const statusTranslations: Record<string, string> = {
@@ -79,7 +101,8 @@ export default function AdminPackageListScreen({ navigation }: AdminPackageListS
       'Assigned': 'Assigné',
       'In Transit': 'En cours',
       'Delivered': 'Livré',
-      'Returned': 'Retourné'
+      'Returned': 'Retourné',
+      'Archived': 'Archivé'
     };
     return statusTranslations[status] || status;
   };
@@ -88,6 +111,16 @@ export default function AdminPackageListScreen({ navigation }: AdminPackageListS
 
   // Filter packages
   const filteredPackages = packages.filter((pkg: any) => {
+    const isArchived = !!(pkg.is_archived || pkg.archived_at);
+
+    // Archive mode first: only archived packages
+    if (showArchived) {
+      if (!isArchived) return false;
+    } else {
+      // Normal mode: hide archived packages
+      if (isArchived) return false;
+    }
+
     // Search
     if (searchQuery.trim()) {
       const query = searchQuery.toLowerCase();
@@ -263,6 +296,51 @@ export default function AdminPackageListScreen({ navigation }: AdminPackageListS
     </View>
   );
 
+  const openPackageDetails = (pkg: any) => {
+    setSelectedPackageForDetailsId(pkg.id);
+    setSelectedPackageForDetails(pkg);
+    setDetailsLoading(true);
+    setDetailsModalVisible(true);
+  };
+
+  // Real-time listener for selected package
+  useEffect(() => {
+    if (!detailsModalVisible || !selectedPackageForDetailsId) return;
+
+    let unsubscribe: (() => void) | undefined;
+
+    const start = async () => {
+      try {
+        setDetailsLoading(true);
+
+        const { default: app } = require('@react-native-firebase/app');
+        const { getFirestore, doc, onSnapshot } = require('@react-native-firebase/firestore');
+
+        const db = getFirestore(app);
+        const ref = doc(db, 'packages', selectedPackageForDetailsId);
+
+        unsubscribe = onSnapshot(ref, (snap: any) => {
+          if (!snap) return;
+          if (snap.exists?.()) {
+            setSelectedPackageForDetails({ id: snap.id, ...snap.data() });
+          } else {
+            setSelectedPackageForDetails(null);
+          }
+          setDetailsLoading(false);
+        });
+      } catch (e) {
+        console.error('Package details onSnapshot error:', e);
+        setDetailsLoading(false);
+      }
+    };
+
+    start();
+
+    return () => {
+      if (unsubscribe) unsubscribe();
+    };
+  }, [detailsModalVisible, selectedPackageForDetailsId]);
+
   const renderTableRow = ({ item }: { item: any }) => (
     <View style={styles.tableRow}>
       <TouchableOpacity onPress={() => toggleSelection(item.id)} style={styles.checkbox}>
@@ -273,7 +351,11 @@ export default function AdminPackageListScreen({ navigation }: AdminPackageListS
           {selectedPackageIds.has(item.id) && <Text style={styles.checkmark}>✓</Text>}
         </View>
       </TouchableOpacity>
-      <TouchableOpacity onPress={() => handleEditPackage(item)} style={[styles.cellPkg, styles.pkgCellContainer]}>
+      <TouchableOpacity
+        onPress={() => openPackageDetails(item)}
+        style={[styles.cellPkg, styles.pkgCellContainer]}
+        accessibilityRole="button"
+      >
         <View style={styles.pkgInfo}>
           <Text style={styles.pkgNumber}>{item.ref_number}</Text>
           <Text style={styles.pkgSubtitle} numberOfLines={1}>{item.description || 'Pas de description'}</Text>
@@ -296,6 +378,7 @@ export default function AdminPackageListScreen({ navigation }: AdminPackageListS
       'In Transit': '#10B981',
       Delivered: '#059669',
       Returned: '#EF4444',
+      Archived: '#8B5CF6',
     };
     return colors[status] || '#6B7280';
   };
@@ -458,13 +541,43 @@ export default function AdminPackageListScreen({ navigation }: AdminPackageListS
         </Text>
         <View style={styles.bulkControls}>
           {selectedPackageIds.size > 0 && (
-            <TouchableOpacity 
-              style={styles.bulkAssignBtn}
-              onPress={() => setBulkAssignModalVisible(true)}
-              disabled={!drivers.length}
-            >
-              <Text style={styles.bulkAssignText}>Assigner</Text>
-            </TouchableOpacity>
+            <>
+              {!showArchived ? (
+                <>
+                  <TouchableOpacity
+                    style={styles.bulkAssignBtn}
+                    onPress={() => setBulkAssignModalVisible(true)}
+                    disabled={!drivers.length}
+                  >
+                    <Text style={styles.bulkAssignText}>Assigner</Text>
+                  </TouchableOpacity>
+
+                  <TouchableOpacity
+                    style={[styles.bulkAssignBtn, { backgroundColor: '#8B5CF6' }]}
+                    onPress={() => {
+                      const ids = Array.from(selectedPackageIds);
+                      void archivePackages(ids);
+                      setSelectedPackageIds(new Set());
+                    }}
+                    disabled={selectedPackageIds.size === 0}
+                  >
+                    <Text style={styles.bulkAssignText}>Archive</Text>
+                  </TouchableOpacity>
+                </>
+              ) : (
+                <TouchableOpacity
+                  style={[styles.bulkAssignBtn, { backgroundColor: '#10B981' }]}
+                  onPress={() => {
+                    const ids = Array.from(selectedPackageIds);
+                    void unarchivePackages(ids);
+                    setSelectedPackageIds(new Set());
+                  }}
+                  disabled={selectedPackageIds.size === 0}
+                >
+                  <Text style={styles.bulkAssignText}>Restaurer</Text>
+                </TouchableOpacity>
+              )}
+            </>
           )}
         </View>
       </View>
@@ -527,6 +640,75 @@ export default function AdminPackageListScreen({ navigation }: AdminPackageListS
                 ) : (
                   <Text style={styles.assignText}>Assigner</Text>
                 )}
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
+
+      {/* Package Details Modal (real-time) */}
+      <Modal visible={detailsModalVisible} transparent animationType="fade">
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalContent}>
+            <Text style={styles.modalTitle}>Détails du Colis</Text>
+
+            {detailsLoading ? (
+              <View style={styles.centerContainer}>
+                <ActivityIndicator size="large" color="#3B82F6" />
+                <Text style={styles.loadingText}>Chargement des détails...</Text>
+              </View>
+            ) : selectedPackageForDetails ? (
+              <ScrollView style={{ maxHeight: 400 }}>
+                <View style={styles.detailBlock}>
+                  <Text style={styles.detailLine}><Text style={styles.detailKey}>Réf:</Text> {selectedPackageForDetails.ref_number}</Text>
+                  <Text style={styles.detailLine}><Text style={styles.detailKey}>Client:</Text> {selectedPackageForDetails.customer_name || 'Non spécifié'}</Text>
+                  <View style={{ marginBottom: 8 }}>
+                    <Text style={styles.detailKey}>Statut:</Text>
+                    <Text
+                      style={{
+                        marginTop: 6,
+                        alignSelf: 'flex-start',
+                        paddingHorizontal: 10,
+                        paddingVertical: 6,
+                        borderRadius: 999,
+                        backgroundColor: getStatusColor(selectedPackageForDetails.status),
+                        color: '#FFFFFF',
+                        fontWeight: '800',
+                      }}
+                    >
+                      {translateStatus(selectedPackageForDetails.status)}
+                    </Text>
+                  </View>
+                  <Text style={styles.detailLine}><Text style={styles.detailKey}>Assigné à:</Text> {(() => {
+                    const assignedId = selectedPackageForDetails.assigned_to;
+                    if (!assignedId) return 'N/A';
+                    const driver = drivers.find((d: any) => d.id === assignedId);
+                    return driver?.name || assignedId;
+                  })()}</Text>
+
+                  <Text style={styles.detailLine}><Text style={styles.detailKey}>assigned_at:</Text> {formatDateTime(selectedPackageForDetails.assigned_at)}</Text>
+                  <Text style={styles.detailLine}><Text style={styles.detailKey}>accepted_at:</Text> {formatDateTime(selectedPackageForDetails.accepted_at)}</Text>
+                  <Text style={styles.detailLine}><Text style={styles.detailKey}>delivered_at:</Text> {formatDateTime(selectedPackageForDetails.delivered_at)}</Text>
+
+                  {selectedPackageForDetails.status === 'Returned' && (
+                    <Text style={styles.detailLine}><Text style={styles.detailKey}>return_reason:</Text> {selectedPackageForDetails.return_reason || 'Raison non trouvée'}</Text>
+                  )}
+                </View>
+              </ScrollView>
+            ) : (
+              <Text style={styles.modalText}>Aucun colis sélectionné.</Text>
+            )}
+
+            <View style={styles.modalButtons}>
+              <TouchableOpacity
+                style={[styles.modalBtn, styles.cancelBtn]}
+                onPress={() => {
+                  setDetailsModalVisible(false);
+                  setSelectedPackageForDetailsId(null);
+                  setSelectedPackageForDetails(null);
+                }}
+              >
+                <Text style={styles.modalBtnText}>Fermer</Text>
               </TouchableOpacity>
             </View>
           </View>
@@ -1037,5 +1219,12 @@ const styles = StyleSheet.create({
   },
   inputDisabled: { backgroundColor: '#F3F4F6', color: '#9CA3AF' },
   disabledNote: { fontSize: 11, color: '#6B7280', marginTop: 4, fontStyle: 'italic' },
+
+  // Package details modal styles
+  detailBlock: { backgroundColor: '#F9FAFB', padding: 12, borderRadius: 10, marginBottom: 12, borderWidth: 1, borderColor: '#E5E7EB' },
+  detailLine: { fontSize: 14, color: '#111827', marginBottom: 8 },
+  detailKey: { fontWeight: '800', color: '#1F2937' },
+  loadingText: { fontSize: 14, fontWeight: '600', color: '#1E3A8A', marginTop: 8 },
+
 });
 

@@ -76,7 +76,7 @@ export const useLocalDatabase = (options: UseLocalDatabaseOptions = {}) => {
     try {
       setLoading(true);
       const [localPackages, localDrivers, syncTime] = await Promise.all([
-        getPackagesLocally(driverId), // Will filter if driverId provided
+        getPackagesLocally(driverId, isAdmin), // Admin gets all packages including archived
         getDriversLocally(),
         getLastSyncTime(),
       ]);
@@ -148,6 +148,7 @@ export const useLocalDatabase = (options: UseLocalDatabaseOptions = {}) => {
       const updates: Partial<Package> = {
         status,
         ...additionalData,
+        _lastModified: new Date().toISOString(),
       };
 
       // Add timestamp for status changes
@@ -158,7 +159,7 @@ export const useLocalDatabase = (options: UseLocalDatabaseOptions = {}) => {
       }
 
       // Update locally first (always works)
-      const localPkgs = await getPackagesLocally();
+      const localPkgs = await getPackagesLocally(undefined, true);
       const pkgIndex = localPkgs.findIndex(p => p.id === packageId);
       
       if (pkgIndex >= 0) {
@@ -189,8 +190,9 @@ export const useLocalDatabase = (options: UseLocalDatabaseOptions = {}) => {
           
           const app = getApp();
           const db = getFirestore(app);
-          
-          await db.collection('packages').doc(packageId).update(updates);
+
+          const { doc, updateDoc } = require('@react-native-firebase/firestore');
+          await updateDoc(doc(db, 'packages', packageId), updates);
           console.log(`✅ Package ${packageId} status synced: ${status}`);
         } catch (syncError) {
           console.log(`⏳ Package ${packageId} updated locally, will sync later`);
@@ -223,7 +225,7 @@ export const useLocalDatabase = (options: UseLocalDatabaseOptions = {}) => {
       
       // Update all packages locally first
       for (const pkgId of packageIds) {
-        const localPkgs = await getPackagesLocally();
+        const localPkgs = await getPackagesLocally(undefined, true);
         const pkgIndex = localPkgs.findIndex(p => p.id === pkgId);
         
         if (pkgIndex >= 0) {
@@ -252,13 +254,17 @@ export const useLocalDatabase = (options: UseLocalDatabaseOptions = {}) => {
         
         const app = getApp();
         const db = getFirestore(app);
-        const batch = db.batch();
+
+        const { doc, writeBatch } = require('@react-native-firebase/firestore');
+        const batch = writeBatch(db);
+
         for (const pkgId of packageIds) {
-          const pkgRef = db.collection('packages').doc(pkgId);
+          const pkgRef = doc(db, 'packages', pkgId);
           batch.update(pkgRef, {
             status: 'Assigned',
             assigned_to: targetDriverId,
-            assigned_at: timestamp
+            assigned_at: timestamp,
+            _lastModified: timestamp
           });
         }
         await batch.commit();
@@ -276,7 +282,8 @@ export const useLocalDatabase = (options: UseLocalDatabaseOptions = {}) => {
               updates: {
                 status: 'Assigned',
                 assigned_to: targetDriverId,
-                assigned_at: timestamp
+                assigned_at: timestamp,
+                _lastModified: timestamp
               }
             },
             timestamp: new Date().toISOString(),
@@ -374,6 +381,144 @@ export const useLocalDatabase = (options: UseLocalDatabaseOptions = {}) => {
     return () => clearInterval(interval);
   }, []);
 
+  const archivePackages = async (packageIds: string[]) => {
+    try {
+      const timestamp = new Date().toISOString();
+
+      // Local update first
+      for (const pkgId of packageIds) {
+        const localPkgs = await getPackagesLocally(undefined, true);
+        const pkgIndex = localPkgs.findIndex(p => p.id === pkgId);
+        if (pkgIndex >= 0) {
+          const updatedPkg = {
+            ...localPkgs[pkgIndex],
+            is_archived: true,
+            status: 'Archived' as const,
+            archived_at: timestamp,
+            _lastModified: new Date().toISOString(),
+          };
+          await upsertPackageLocally(updatedPkg);
+          setPackages(prev => prev.map(p => (p.id === pkgId ? updatedPkg : p)));
+        }
+      }
+
+      // Try immediate Firestore update for archives
+      try {
+        const { getApp } = require('@react-native-firebase/app');
+        const { getFirestore } = require('@react-native-firebase/firestore');
+        const app = getApp();
+        const db = getFirestore(app);
+
+        const { doc, writeBatch } = require('@react-native-firebase/firestore');
+        const batch = writeBatch(db);
+
+        for (const pkgId of packageIds) {
+          const pkgRef = doc(db, 'packages', pkgId);
+          batch.update(pkgRef, {
+            is_archived: true,
+            status: 'Archived',
+            archived_at: timestamp,
+            _lastModified: timestamp,
+          });
+        }
+
+        await batch.commit();
+      } catch (syncError) {
+        // Queue offline
+        for (const pkgId of packageIds) {
+          await addToSyncQueue({
+            id: `sync_${Date.now()}_${pkgId}`,
+            type: 'update',
+            collection: 'packages',
+            data: {
+              id: pkgId,
+              updates: {
+                is_archived: true,
+                status: 'Archived',
+                archived_at: timestamp,
+                _lastModified: timestamp,
+              }
+            },
+            timestamp: new Date().toISOString(),
+            synced: false
+          });
+        }
+      }
+    } catch (error) {
+      console.error('Error archiving packages:', error);
+      throw error;
+    }
+  };
+
+  const unarchivePackages = async (packageIds: string[]) => {
+    try {
+      const timestamp = new Date().toISOString();
+
+      // Local update first
+      for (const pkgId of packageIds) {
+        const localPkgs = await getPackagesLocally(undefined, true);
+        const pkgIndex = localPkgs.findIndex(p => p.id === pkgId);
+        if (pkgIndex >= 0) {
+          const updatedPkg = {
+            ...localPkgs[pkgIndex],
+            is_archived: false,
+            status: 'Pending' as const,
+            archived_at: undefined,
+            _lastModified: new Date().toISOString(),
+          };
+          await upsertPackageLocally(updatedPkg);
+          setPackages(prev => prev.map(p => (p.id === pkgId ? updatedPkg : p)));
+        }
+      }
+
+      // Try immediate Firestore update
+      try {
+        const { getApp } = require('@react-native-firebase/app');
+        const { getFirestore } = require('@react-native-firebase/firestore');
+        const app = getApp();
+        const db = getFirestore(app);
+
+        const { doc, writeBatch } = require('@react-native-firebase/firestore');
+        const batch = writeBatch(db);
+
+        for (const pkgId of packageIds) {
+          const pkgRef = doc(db, 'packages', pkgId);
+          batch.update(pkgRef, {
+            is_archived: false,
+            status: 'Pending',
+            archived_at: null,
+            _lastModified: timestamp,
+          });
+        }
+
+        await batch.commit();
+      } catch (syncError) {
+        // Queue offline
+        for (const pkgId of packageIds) {
+          await addToSyncQueue({
+            id: `sync_${Date.now()}_${pkgId}`,
+            type: 'update',
+            collection: 'packages',
+            data: {
+              id: pkgId,
+              updates: {
+                is_archived: false,
+                status: 'Pending',
+                archived_at: null,
+                _lastModified: timestamp,
+              }
+            },
+            timestamp: new Date().toISOString(),
+            synced: false
+          });
+        }
+      }
+    } catch (error) {
+      console.error('Error unarchiving packages:', error);
+      throw error;
+    }
+  };
+
   return {
     packages,
     drivers,
@@ -384,6 +529,8 @@ export const useLocalDatabase = (options: UseLocalDatabaseOptions = {}) => {
     refresh,
     updatePackageStatus,
     assignPackageToDriver,
+    archivePackages,
+    unarchivePackages,
     getFilteredPackages,
     packageStats,
   };

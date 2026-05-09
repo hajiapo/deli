@@ -1,7 +1,7 @@
 export interface Package {
   id: string;
   ref_number: string;
-  status: 'Pending' | 'Assigned' | 'In Transit' | 'Delivered' | 'Returned';
+  status: 'Pending' | 'Assigned' | 'In Transit' | 'Delivered' | 'Returned' | 'Archived';
   customer_name?: string; // Made optional
   customer_address?: string; // Made optional
   customer_phone?: string;
@@ -26,6 +26,8 @@ export interface Package {
   created_at?: string; // Added for package creation
   _lastModified?: string;
   _version?: string;
+  is_archived?: boolean;
+  archived_at?: string;
 }
 
 export interface Driver {

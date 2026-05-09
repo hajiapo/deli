@@ -139,6 +139,14 @@ const AdminDashboardScreen: React.FC<AdminDashboardScreenProps> = ({ navigation 
           </TouchableOpacity>
 
           <TouchableOpacity
+            style={[styles.actionBtn, { backgroundColor: '#8B5CF6' }]}
+            onPress={() => navigation.navigate('AdminPackageList', { archivedOnly: true })}
+          >
+            <Text style={styles.actionBtnText}>📦 Colis archiveés</Text>
+          </TouchableOpacity>
+
+
+          <TouchableOpacity
             style={[styles.actionBtn, { backgroundColor: '#10B981' }]}
             onPress={() => navigation.navigate('AddPackage')}
           >

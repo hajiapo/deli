@@ -96,18 +96,45 @@ export const syncPackagesFromFirestore = async (driverId?: string, isAdmin = fal
       // For admin, try to sync without auth check (if Firestore rules allow)
       if (isAdmin) {
         console.log('👑 Admin sync - attempting direct Firestore access');
-        
+
         try {
           const snapshot = await getDocs(collection(db, 'packages'));
-          const packages: Package[] = [];
-          
+          const firestorePackages: Package[] = [];
+
           snapshot.forEach((doc: any) => {
             const data = doc.data() as any;
-            packages.push({ id: doc.id, ...data });
+            firestorePackages.push({ id: doc.id, ...data });
           });
-          
-          await AsyncStorage.setItem(PACKAGES_KEY, JSON.stringify(packages));
-          console.log(`📥 Admin synced ${packages.length} packages from Firestore`);
+
+          // Merge local archived overrides back onto Firestore-synced packages
+          // so that "archive" does not get reverted by stale Firestore reads.
+          const localRaw = await AsyncStorage.getItem(PACKAGES_KEY);
+          const localAllPackages: Package[] = localRaw ? JSON.parse(localRaw) : [];
+
+          const localArchivedById = new Map<string, { is_archived: boolean; archived_at?: string }>();
+          for (const p of localAllPackages) {
+            const isArchived = !!(p.is_archived || p.archived_at);
+            if (isArchived) {
+              localArchivedById.set(p.id, {
+                is_archived: true,
+                archived_at: p.archived_at,
+              });
+            }
+          }
+
+          const mergedPackages = firestorePackages.map(p => {
+            const localOverride = localArchivedById.get(p.id);
+            if (!localOverride) return p;
+
+            return {
+              ...p,
+              is_archived: true,
+              archived_at: localOverride.archived_at ?? p.archived_at,
+            };
+          });
+
+          await AsyncStorage.setItem(PACKAGES_KEY, JSON.stringify(mergedPackages));
+          console.log(`📥 Admin synced ${mergedPackages.length} packages from Firestore (with local archive merge)`);
           return;
         } catch (adminSyncError) {
           console.log('⚠️ Admin direct sync failed, trying with auth:', adminSyncError);
@@ -279,7 +306,7 @@ export const syncDriversFromFirestore = async (): Promise<void> => {
 // updatePackage implementation moved below with enhanced functionality
 
 export const upsertPackageLocally = async (pkg: Package): Promise<void> => {
-  const packages = await getPackagesLocally();
+  const packages = await getPackagesLocally(undefined, true);
   const index = packages.findIndex(p => p.id === pkg.id);
   if (index > -1) {
     packages[index] = pkg;
@@ -299,17 +326,20 @@ export const getLastSyncTime = async (): Promise<string> => {
 };
 
 // Enhanced package filtering for drivers
-export const getPackagesLocally = async (driverId?: string): Promise<Package[]> => {
+export const getPackagesLocally = async (driverId?: string, includeArchived: boolean = false): Promise<Package[]> => {
   try {
     const data = await AsyncStorage.getItem(PACKAGES_KEY);
     const allPackages: Package[] = data ? JSON.parse(data) : [];
     
-    // If driverId provided, filter packages assigned to this driver
+  // If driverId provided, filter packages assigned to this driver
     if (driverId) {
-      return allPackages.filter(pkg => pkg.assigned_to === driverId);
+      return allPackages.filter(pkg =>
+        pkg.assigned_to === driverId && (includeArchived || !pkg.is_archived || pkg.status === 'Archived')
+      );
     }
-    
-    return allPackages;
+
+    // Admin/normal retrieval: hide archived by default unless requested
+    return allPackages.filter(pkg => includeArchived || !pkg.is_archived);
   } catch {
     return [];
   }
@@ -318,7 +348,7 @@ export const getPackagesLocally = async (driverId?: string): Promise<Package[]> 
 // Local-first package creation with immediate sync of new package only
 export const createPackage = async (packageData: Omit<Package, 'id'>): Promise<void> => {
   try {
-    const packages = await getPackagesLocally();
+    const packages = await getPackagesLocally(undefined, true);
     const newPackage: Package = {
       ...packageData,
       id: `pkg_${Date.now()}_${Math.random().toString(36).slice(2, 11)}`,
@@ -340,7 +370,8 @@ export const createPackage = async (packageData: Omit<Package, 'id'>): Promise<v
       const app = getApp();
       const db = getFirestore(app);
       
-      await db.collection('packages').doc(newPackage.id).set(newPackage);
+      const { doc, setDoc } = require('@react-native-firebase/firestore');
+      await setDoc(doc(db, 'packages', newPackage.id), newPackage);
       console.log(`✅ Package ${newPackage.id} synced immediately`);
       
       // Mark as synced in queue
@@ -412,24 +443,51 @@ export const processSyncQueue = async (): Promise<void> => {
   try {
     const queue = await getSyncQueue();
     const unsynced = queue.filter(op => !op.synced);
-    
+
     for (const operation of unsynced) {
       try {
-        // Use React Native Firebase v22 modular API
         const { getApp } = require('@react-native-firebase/app');
-        const { getFirestore } = require('@react-native-firebase/firestore');
-        
+        const firestoreMod = require('@react-native-firebase/firestore');
+        const { getFirestore } = firestoreMod;
+
         const app = getApp();
         const db = getFirestore(app);
-        
-        if (operation.type === 'create' && operation.collection === 'packages') {
-          await db.collection('packages').doc(operation.data.id).set(operation.data);
-        } else if (operation.type === 'update' && operation.collection === 'packages') {
-          await db.collection('packages').doc(operation.data.id).update(operation.data.updates);
-        } else if (operation.type === 'delete' && operation.collection === 'packages') {
-          await db.collection('packages').doc(operation.data.id).delete();
+
+        // Prefer modular exports if available; otherwise fall back to namespaced API.
+        const {
+          doc,
+          setDoc,
+          updateDoc,
+          deleteDoc,
+        } = firestoreMod;
+
+        if (doc && setDoc && updateDoc && deleteDoc) {
+          if (operation.type === 'create' && operation.collection === 'packages') {
+            await setDoc(doc(db, 'packages', operation.data.id), operation.data);
+          } else if (operation.type === 'update' && operation.collection === 'packages') {
+            const finalUpdates = {
+              ...operation.data.updates,
+              _lastModified: new Date().toISOString()
+            };
+            await updateDoc(doc(db, 'packages', operation.data.id), finalUpdates);
+          } else if (operation.type === 'delete' && operation.collection === 'packages') {
+            await deleteDoc(doc(db, 'packages', operation.data.id));
+          }
+        } else {
+          // Fallback to avoid crashing when modular exports are not available in runtime
+          if (operation.type === 'create' && operation.collection === 'packages') {
+            await db.collection('packages').doc(operation.data.id).set(operation.data);
+          } else if (operation.type === 'update' && operation.collection === 'packages') {
+            const finalUpdates = {
+              ...operation.data.updates,
+              _lastModified: new Date().toISOString()
+            };
+            await db.collection('packages').doc(operation.data.id).update(finalUpdates);
+          } else if (operation.type === 'delete' && operation.collection === 'packages') {
+            await db.collection('packages').doc(operation.data.id).delete();
+          }
         }
-        
+
         await markSyncItemAsSynced(operation.id);
       } catch (error) {
         console.error(`Failed to sync operation ${operation.id}:`, error);
@@ -440,12 +498,12 @@ export const processSyncQueue = async (): Promise<void> => {
   }
 };
 
-// Enhanced package update with real-time sync
+// Real-time package filtering for admin dashboard
 // Local-first package update (used by hook for immediate updates)
 export const updatePackage = async (packageId: string, updates: Partial<Package>): Promise<void> => {
   try {
     // Update locally first
-    const packages = await getPackagesLocally();
+    const packages = await getPackagesLocally(undefined, true);
     const pkgIndex = packages.findIndex(p => p.id === packageId);
     
     if (pkgIndex >= 0) {

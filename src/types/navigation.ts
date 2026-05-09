@@ -11,7 +11,7 @@ export type RootStackParamList = {
   AddPackage: undefined;
   DriverCredentials: undefined;
   PackageList: undefined;
-  AdminPackageList: undefined;
+  AdminPackageList: { archivedOnly?: boolean } | undefined;
   ChangeAdminPin: undefined;
 };
 

@@ -53,7 +53,8 @@ export default function DelivererTaskScreen({ navigation }: DelivererTaskScreenP
       'Assigned': 1,
       'In Transit': 2,
       'Returned': 3,
-      'Delivered': 4
+      'Delivered': 4,
+      'Archived': 5
     };
     return (statusOrder[a.status] || 99) - (statusOrder[b.status] || 99);
   });
@@ -254,7 +255,8 @@ export default function DelivererTaskScreen({ navigation }: DelivererTaskScreenP
       'Assigned': 'Assigné',
       'In Transit': 'En cours',
       'Delivered': 'Livré',
-      'Returned': 'Retourné'
+      'Returned': 'Retourné',
+      'Archived': 'Archivé'
     };
     return statusTranslations[status] || status;
   };
