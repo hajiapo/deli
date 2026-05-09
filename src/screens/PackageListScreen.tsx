@@ -210,7 +210,7 @@ Notes     : ${pkg.description || 'Aucune'}
               </View>
             </View>
             
-            <ScrollView style={styles.printableContainer} contentContainerStyle={{ paddingBottom: 60 }}>
+            <ScrollView style={styles.printableContainer} contentContainerStyle={{ paddingBottom: 120 }}>
               {selectedPkg && (
                 <>
                   <Text selectable={true} style={styles.printableText}>

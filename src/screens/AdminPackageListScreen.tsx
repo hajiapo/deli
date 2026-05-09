@@ -24,7 +24,7 @@ import { parseDriverReport, autoUpdatePackagesFromReport, validateReport } from 
 
 export default function AdminPackageListScreen({ navigation, route }: AdminPackageListScreenProps) {
   
-  const { packages, drivers, loading, refresh, archivePackages, unarchivePackages } = useLocalDatabase({ isAdmin: true });
+  const { packages, drivers, loading, refresh, archivePackages, unarchivePackages, assignPackageToDriver } = useLocalDatabase({ isAdmin: true });
   const [refreshing, setRefreshing] = useState(false);
 
   const onRefresh = useCallback(async () => {
@@ -181,32 +181,16 @@ export default function AdminPackageListScreen({ navigation, route }: AdminPacka
 
     setBulkAssigning(true);
     try {
-      const { getFirestore, collection, doc, writeBatch } = require('firebase/firestore');
-      
-      // Get the Firebase app from React Native Firebase
-      const { default: app } = require('@react-native-firebase/app');
-      const db = getFirestore(app);
-      const batch = writeBatch(db);
-      const timestamp = new Date().toISOString();
-
-      selectedPackageIds.forEach(pkgId => {
-        const ref = doc(db, 'packages', pkgId);
-        batch.update(ref, {
-          status: 'Assigned',
-          assigned_to: selectedDriverId,
-          assigned_at: timestamp,
-        });
-      });
-
-      await batch.commit();
-      await refresh();
+      const packageIds = Array.from(selectedPackageIds);
+      await assignPackageToDriver(packageIds, selectedDriverId);
       
       setBulkAssignModalVisible(false);
       setSelectedPackageIds(new Set());
       setSelectedDriverId('');
-      Alert.alert('Succès', `${selectedPackageIds.size} colis assignés!`);
-    } catch (error) {
-      Alert.alert('Erreur', `Échec de l'assignation.`);
+      Alert.alert('Succès', `${packageIds.length} colis assignés!`);
+    } catch (error: any) {
+      console.error('Bulk assign error:', error);
+      Alert.alert('Erreur', error?.message || 'Échec de l\'assignation.');
     } finally {
       setBulkAssigning(false);
     }
@@ -528,7 +512,12 @@ export default function AdminPackageListScreen({ navigation, route }: AdminPacka
         return;
       }
     } catch (e) {
-      // Not JSON - treat as plain reference number
+      // Not JSON - check if it's formatted text with RÉFÉRENCE line
+      const refMatch = searchRef.match(/RÉFÉRENCE\s*:\s*(PKG-\d+|\d+)/i);
+      if (refMatch) {
+        searchRef = refMatch[1];
+      }
+      
       // Validate reference number format (basic validation)
       if (!/^PKG-\d+$/.test(searchRef) && !/^\d+$/.test(searchRef)) {
         Alert.alert('Format invalide', 'Le QR code doit contenir un numéro de référence valide (ex: PKG-123456).');

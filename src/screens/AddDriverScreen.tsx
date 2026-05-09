@@ -86,9 +86,18 @@ export default function AddDriverScreen({ navigation }: AddDriverScreenProps) {
     };
     
     try {
-      let driverId: string = '';
+      // Generate a short driver ID (format: DRV-XXXXXX where X is alphanumeric)
+      const generateShortDriverId = () => {
+        const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'; // Removed similar looking chars (0,1,I,O)
+        let result = 'DRV-';
+        for (let i = 0; i < 6; i++) {
+          result += chars.charAt(Math.floor(Math.random() * chars.length));
+        }
+        return result;
+      };
+      
+      let driverId: string = generateShortDriverId();
       let useFirebase = false;
-      let useRandomId = false;
       
       // IMPORTANT: Admin-created drivers should NEVER use pre-stored IDs
       // Pre-stored IDs (DRV-001 to DRV-020) are ONLY for pre-configured drivers
@@ -99,27 +108,29 @@ export default function AddDriverScreen({ navigation }: AddDriverScreenProps) {
       // Otherwise, create locally only
       
       if (isAdmin) {
-        // Admin is logged in - try to save to Firestore
+        // Admin is logged in - try to save to Firestore with our pre-generated ID
         try {
-          const { getFirestore, collection, addDoc } = require('firebase/firestore');
+          // Use React Native Firebase v22 modular API
+          const { getApp } = require('@react-native-firebase/app');
+          const { getFirestore, doc, setDoc } = require('@react-native-firebase/firestore');
           
-          // Get the Firebase app from React Native Firebase
-          const { default: app } = require('@react-native-firebase/app');
+          const app = getApp();
           const db = getFirestore(app);
           
-          // Create driver in Firestore (gets auto-generated ID like "2mgFO68eYM9I97sHlHi8")
-          const driverRef = await addDoc(collection(db, 'drivers'), {
+          // Create driver in Firestore using our generated ID (consistent format)
+          const driverRef = doc(db, 'drivers', driverId);
+          await setDoc(driverRef, {
+            id: driverId, // Store ID in document too for reference
             name: trimmedName,
             phone: trimmedPhone,
             vehicle_type: vehicle,
             pin_code: trimmedPin,
             is_active: true,
             created_at: new Date().toISOString(),
-            source: 'firebase', // Mark as from Firebase
-            created_by: 'admin' // Track that admin created this
+            source: 'firebase',
+            created_by: 'admin'
           });
           
-          driverId = driverRef.id; // Firestore auto-generated ID
           useFirebase = true;
           if (isMounted) {
             setFirebaseAvailable(true);
@@ -137,19 +148,15 @@ export default function AddDriverScreen({ navigation }: AddDriverScreenProps) {
           if (isMounted) {
             setFirebaseAvailable(false);
           }
-          // Continue to local creation
+          // Continue to local creation - same ID format will be used
         }
       }
       
-      // If not admin OR Firestore failed, create locally
+      // Store locally with same ID format (whether Firestore succeeded or not)
       if (!useFirebase) {
-        // Generate local ID for driver
-        driverId = generateAdminDriverId();
-        useRandomId = true;
-        
         // Add to local credentials (for login)
         addNewDriverCredential(trimmedPin);
-        console.log(`📱 Created ${isAdmin ? 'local (Firestore failed)' : 'local-only'} driver with ID:`, driverId);
+        console.log(`📱 Created driver locally with ID:`, driverId);
       }
 
       // Make sure driverId is set
@@ -181,21 +188,21 @@ export default function AddDriverScreen({ navigation }: AddDriverScreenProps) {
       
       if (useFirebase) {
         message += '✅ Synchronisé avec Firestore (Admin multi-appareil)\n';
-        message += `📊 ID Firestore: ${driverId}\n`;
+        message += '� Disponible sur tous les appareils connectés\n';
       } else if (isAdmin && firebaseError) {
         message += '📱 Stocké localement seulement\n';
         message += `⚠️ Firestore erreur: ${(firebaseError as any)?.code || 'Erreur inconnue'}\n`;
         if ((firebaseError as any)?.message) {
           message += `Détail: ${(firebaseError as any).message.substring(0, 50)}...\n`;
         }
-        message += '🔧 Admin connecté mais Firestore indisponible\n';
+        message += '🔧 Se synchronisera quand Firestore sera disponible\n';
       } else if (!isAdmin) {
         message += '📱 Stocké localement seulement\n';
         message += '👤 Mode Livreur - Pas de synchronisation Firestore\n';
         message += 'ℹ️ Seul l\'admin peut synchroniser entre appareils\n';
       }
       
-      message += `\nFormat ID: ${driverId.startsWith('ADM-') ? 'ADM-XXXX-YYYY (Local)' : 'Firestore auto-généré'}\n`;
+      message += `\nFormat ID: DRV-XXXXXX (6 caractères alphanumériques)\n`;
       message += '⚠️ Note: Les IDs DRV-001 à DRV-020 sont réservés pour configuration préalable\n';
       message += '\nVeuillez transmettre ces informations au livreur.';
 

@@ -242,10 +242,9 @@ export class SecureFirestore {
       throw new Error(`Permission denied: Cannot create document in ${collection}`);
     }
 
-    const { getFirestore, collection: firestoreCollection, addDoc } = require('firebase/firestore');
-    
-    // Get the Firebase app from React Native Firebase
-    const { default: app } = require('@react-native-firebase/app');
+    const { getApp } = require('@react-native-firebase/app');
+    const { getFirestore, collection: firestoreCollection, addDoc } = require('@react-native-firebase/firestore');
+    const app = getApp();
     const db = getFirestore(app);
     const docRef = await addDoc(firestoreCollection(db, collection), data);
     return { id: docRef.id, ...data };
@@ -255,10 +254,9 @@ export class SecureFirestore {
    * Update a document with permission check
    */
   static async updateDocument(collection: string, docId: string, updateData: any): Promise<any> {
-    const { getFirestore, collection: firestoreCollection, doc, getDoc, updateDoc } = require('firebase/firestore');
-    
-    // Get the Firebase app from React Native Firebase
-    const { default: app } = require('@react-native-firebase/app');
+    const { getApp } = require('@react-native-firebase/app');
+    const { getFirestore, collection: firestoreCollection, doc, getDoc, updateDoc } = require('@react-native-firebase/firestore');
+    const app = getApp();
     const db = getFirestore(app);
     const docRef = doc(db, collection, docId);
     const docSnap = await getDoc(docRef);
@@ -302,10 +300,9 @@ export class SecureFirestore {
       throw new Error(`Permission denied: Cannot delete document in ${collection}`);
     }
 
-    const { getFirestore, collection: firestoreCollection, doc, deleteDoc } = require('firebase/firestore');
-    
-    // Get the Firebase app from React Native Firebase
-    const { default: app } = require('@react-native-firebase/app');
+    const { getApp } = require('@react-native-firebase/app');
+    const { getFirestore, collection: firestoreCollection, doc, deleteDoc } = require('@react-native-firebase/firestore');
+    const app = getApp();
     const db = getFirestore(app);
     const docRef = doc(db, collection, docId);
     await deleteDoc(docRef);

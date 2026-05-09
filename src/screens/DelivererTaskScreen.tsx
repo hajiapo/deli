@@ -58,6 +58,13 @@ export default function DelivererTaskScreen({ navigation }: DelivererTaskScreenP
   const [autoReportSent, setAutoReportSent] = useState(false);
   const [adminPhone, setAdminPhone] = useState(''); // This could come from config or settings
 
+  // Debug: Log driver info and packages
+  useEffect(() => {
+    console.log('📱 Driver ID:', driverId);
+    console.log('📦 Packages loaded:', localPackages.length);
+    console.log('📋 Package details:', localPackages.map(p => ({ id: p.id, ref: p.ref_number, assigned_to: p.assigned_to, status: p.status })));
+  }, [driverId, localPackages]);
+
   // Sort packages by status
   const packages = [...localPackages].sort((a, b) => {
     const statusOrder: Record<string, number> = {
@@ -312,7 +319,12 @@ export default function DelivererTaskScreen({ navigation }: DelivererTaskScreenP
         return;
       }
     } catch (e) {
-      // Not JSON - treat as plain reference number
+      // Not JSON - check if it's formatted text with RÉFÉRENCE line
+      const refMatch = searchRef.match(/RÉFÉRENCE\s*:\s*(PKG-\d+|\d+)/i);
+      if (refMatch) {
+        searchRef = refMatch[1];
+      }
+      
       // Validate reference number format (basic validation)
       if (!/^PKG-\d+$/.test(searchRef) && !/^\d+$/.test(searchRef)) {
         Alert.alert('Format invalide', 'Le QR code doit contenir un numéro de référence valide (ex: PKG-123456).');

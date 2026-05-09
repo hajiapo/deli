@@ -1,6 +1,7 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { View, Text, StyleSheet, FlatList, TouchableOpacity, ActivityIndicator, Alert, Modal } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { useFocusEffect } from '@react-navigation/native';
 import { getActiveDrivers, DRIVER_CREDENTIALS } from '../config/credentials';
 import { DriverListScreenProps } from '../types/navigation';
 import { 
@@ -17,6 +18,7 @@ export default function DriverListScreen({ navigation, route }: DriverListScreen
   const [showPrestoredDrivers, setShowPrestoredDrivers] = useState(false);
   const [prestoredDrivers, setPrestoredDrivers] = useState<any[]>([]);
   const [assigning, setAssigning] = useState(false);
+  const [unsubscribeFn, setUnsubscribeFn] = useState<(() => void) | null>(null);
 
   // Check if we're in assignment mode
   const isAssignmentMode = route?.params?.mode === 'assign';
@@ -72,10 +74,9 @@ export default function DriverListScreen({ navigation, route }: DriverListScreen
         
         // 4. Try Firebase for real-time updates
         try {
-          const { getFirestore, collection, onSnapshot } = require('firebase/firestore');
-          
-          // Get the Firebase app from React Native Firebase
-          const { default: app } = require('@react-native-firebase/app');
+          const { getApp } = require('@react-native-firebase/app');
+          const { getFirestore, collection, onSnapshot } = require('@react-native-firebase/firestore');
+          const app = getApp();
           const db = getFirestore(app);
           
           console.log('🔍 Attempting to connect to Firebase Firestore...');
@@ -150,6 +151,9 @@ export default function DriverListScreen({ navigation, route }: DriverListScreen
             }
           );
 
+          // Store unsubscribe function in state
+          setUnsubscribeFn(() => unsubscribe);
+          
           return () => {
             isSubscribed = false;
             unsubscribe();
@@ -157,6 +161,7 @@ export default function DriverListScreen({ navigation, route }: DriverListScreen
         } catch (firebaseError) {
           console.log('Firebase initialization failed:', firebaseError);
           setFirebaseAvailable(false);
+          setUnsubscribeFn(null);
           setDrivers(uniqueLocalDrivers);
           setLoading(false);
           return () => {
@@ -175,15 +180,170 @@ export default function DriverListScreen({ navigation, route }: DriverListScreen
     loadAllDrivers();
   }, []);
 
+  // Manual refresh function - reloads local drivers and re-merges with Firebase
+  const handleRefresh = async () => {
+    setLoading(true);
+    try {
+      // Reload from local storage
+      const { getDriversLocally } = await import('../utils/localDatabase');
+      const localDrivers = await getDriversLocally();
+      
+      // Get active pre-stored drivers
+      const activeStored = getActiveDrivers();
+      const storedWithDetails = activeStored.map(d => ({
+        ...d,
+        name: `Livreur ${d.id.split('-')[1]}`,
+        vehicle_type: 'Non spécifié',
+        phone: 'Non spécifié',
+        pin_code: '****',
+        source: 'stored'
+      }));
+      
+      // Merge local drivers, removing duplicates
+      const uniqueLocalDrivers: any[] = [];
+      const seenIds = new Set<string>();
+      
+      localDrivers.forEach(driver => {
+        if (!seenIds.has(driver.id)) {
+          seenIds.add(driver.id);
+          uniqueLocalDrivers.push(driver);
+        }
+      });
+      
+      storedWithDetails.forEach(storedDriver => {
+        if (!seenIds.has(storedDriver.id)) {
+          seenIds.add(storedDriver.id);
+          uniqueLocalDrivers.push(storedDriver);
+        }
+      });
+      
+      // Merge with current Firebase drivers (if any)
+      setDrivers(prevDrivers => {
+        const firebaseDrivers = prevDrivers.filter(d => d.source === 'firebase');
+        const firebaseIds = new Set(firebaseDrivers.map(d => d.id));
+        
+        // Add unique local drivers that aren't in Firebase
+        const newLocalDrivers = uniqueLocalDrivers.filter(ld => !firebaseIds.has(ld.id));
+        
+        const merged = [...firebaseDrivers, ...newLocalDrivers];
+        console.log('🔄 Manual refresh: merged', merged.length, 'drivers (', firebaseDrivers.length, 'Firebase +', newLocalDrivers.length, 'local)');
+        return merged;
+      });
+    } catch (error) {
+      console.error('Error refreshing drivers:', error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Sync local-only drivers to Firestore
+  const syncLocalDriversToFirestore = async () => {
+    if (!firebaseAvailable) return;
+    
+    try {
+      const { getDriversLocally } = await import('../utils/localDatabase');
+      const localDrivers = await getDriversLocally();
+      
+      // Find drivers with source 'local' (not synced to Firestore)
+      const unsyncedDrivers = localDrivers.filter(d => d.source === 'local');
+      
+      if (unsyncedDrivers.length === 0) return;
+      
+      console.log(`🔄 Syncing ${unsyncedDrivers.length} local drivers to Firestore...`);
+      
+      const { getApp } = require('@react-native-firebase/app');
+      const { getFirestore, doc, setDoc } = require('@react-native-firebase/firestore');
+      const app = getApp();
+      const db = getFirestore(app);
+      
+      let syncedCount = 0;
+      for (const driver of unsyncedDrivers) {
+        try {
+          await setDoc(doc(db, 'drivers', driver.id), {
+            id: driver.id,
+            name: driver.name,
+            phone: driver.phone,
+            vehicle_type: driver.vehicle_type,
+            pin_code: driver.pin_code,
+            is_active: true,
+            created_at: driver.created_at || new Date().toISOString(),
+            source: 'firebase',
+            synced_from_local: true
+          });
+          syncedCount++;
+          console.log(`✅ Synced driver ${driver.id} to Firestore`);
+        } catch (syncError) {
+          console.log(`❌ Failed to sync driver ${driver.id}:`, syncError);
+        }
+      }
+      
+      if (syncedCount > 0) {
+        console.log(`🎉 Successfully synced ${syncedCount} drivers to Firestore`);
+        // Refresh the list to show updated sources
+        handleRefresh();
+      }
+    } catch (error) {
+      console.error('Error syncing local drivers:', error);
+    }
+  };
+
+  // Refresh when screen comes into focus (after creating a new driver)
+  useFocusEffect(
+    useCallback(() => {
+      console.log('👁️ DriverListScreen focused - refreshing drivers');
+      // Reload drivers from local storage and merge with existing state
+      const refreshOnFocus = async () => {
+        try {
+          const { getDriversLocally } = await import('../utils/localDatabase');
+          const localDrivers = await getDriversLocally();
+          
+          // Merge with current Firebase drivers to avoid losing them
+          setDrivers(prevDrivers => {
+            const firebaseDrivers = prevDrivers.filter(d => d.source === 'firebase');
+            const firebaseIds = new Set(firebaseDrivers.map(d => d.id));
+            
+            // Add local drivers that aren't already in the list
+            const newLocalDrivers = localDrivers.filter(ld => !firebaseIds.has(ld.id));
+            
+            const merged = [...firebaseDrivers, ...newLocalDrivers];
+            console.log('🔄 Auto-refresh on focus: merged', merged.length, 'drivers');
+            return merged;
+          });
+          
+          // Try to sync any local-only drivers to Firestore
+          await syncLocalDriversToFirestore();
+        } catch (error) {
+          console.error('Error refreshing on focus:', error);
+        }
+      };
+      refreshOnFocus();
+    }, [])
+  );
+
   const handleModifyDriver = (driver: any) => {
     // Navigate to modify screen with driver data
     navigation.navigate('ModifyDriver', { driver });
   };
 
-  const handleRemoveDriver = (driver: any) => {
+  const handleRemoveDriver = async (driver: any) => {
+    // Check if driver has assigned packages
+    let assignedCount = 0;
+    try {
+      const { getPackagesLocally } = await import('../utils/localDatabase');
+      const allPackages = await getPackagesLocally(undefined, true);
+      assignedCount = allPackages.filter(p => p.assigned_to === driver.id).length;
+    } catch (e) {
+      console.log('Could not check assigned packages:', e);
+    }
+    
+    let message = `Voulez-vous vraiment supprimer le livreur "${driver.name}" (${driver.id}) ?`;
+    if (assignedCount > 0) {
+      message += `\n\n⚠️ Ce livreur a ${assignedCount} colis assigné(s).\nLes colis seront désassignés et remis en attente.`;
+    }
+    
     Alert.alert(
       "Confirmer la suppression",
-      `Voulez-vous vraiment supprimer le livreur "${driver.name}" (${driver.id}) ?`,
+      message,
       [
         { text: "Annuler", style: "cancel" },
         { 
@@ -199,36 +359,77 @@ export default function DriverListScreen({ navigation, route }: DriverListScreen
     try {
       console.log('Removing driver:', driver.id);
       
-      // 1. Try to mark as inactive in Firebase instead of deleting
-      if (firebaseAvailable) {
-        try {
-          const { getFirestore, doc, updateDoc } = require('firebase/firestore');
+      // Pause Firebase listener temporarily to prevent re-adding during deletion
+      if (unsubscribeFn) {
+        console.log('⏸️ Pausing Firebase listener during deletion');
+        unsubscribeFn();
+      }
+      
+      // 1. Find and unassign packages assigned to this driver
+      let unassignedCount = 0;
+      try {
+        const { getPackagesLocally, updatePackage } = await import('../utils/localDatabase');
+        const allPackages = await getPackagesLocally(undefined, true);
+        const assignedPackages = allPackages.filter(p => p.assigned_to === driver.id);
+        
+        if (assignedPackages.length > 0) {
+          console.log(`📦 Found ${assignedPackages.length} packages assigned to driver ${driver.id}`);
           
-          // Get the Firebase app from React Native Firebase
-          const { default: app } = require('@react-native-firebase/app');
-          const db = getFirestore(app);
-          // Mark driver as inactive instead of deleting
-          await updateDoc(doc(db, 'drivers', driver.id), {
-            is_active: false,
-            deleted_at: new Date().toISOString(),
-            deleted_by: 'admin'
-          });
-          console.log('✅ Driver marked as inactive in Firebase');
-        } catch (firebaseError) {
-          console.log('Could not update driver in Firebase:', firebaseError);
-          // If update fails, try to delete as fallback
-          try {
-            const { getFirestore, doc, deleteDoc } = require('firebase/firestore');
-            
-            // Get the Firebase app from React Native Firebase
-            const { default: app } = require('@react-native-firebase/app');
-            const db = getFirestore(app);
-            await deleteDoc(doc(db, 'drivers', driver.id));
-            console.log('✅ Driver deleted from Firebase (fallback)');
-          } catch (deleteError) {
-            console.log('Could not delete from Firebase either:', deleteError);
+          for (const pkg of assignedPackages) {
+            // Update package to unassign and set back to Pending
+            await updatePackage(pkg.id, {
+              assigned_to: undefined,
+              status: 'Pending',
+              _lastModified: new Date().toISOString()
+            });
+            unassignedCount++;
+          }
+          
+          // Also update in Firestore if available
+          if (firebaseAvailable) {
+            try {
+              const { getApp } = require('@react-native-firebase/app');
+              const { getFirestore, doc, writeBatch } = require('@react-native-firebase/firestore');
+              const app = getApp();
+              const db = getFirestore(app);
+              const batch = writeBatch(db);
+              
+              for (const pkg of assignedPackages) {
+                const pkgRef = doc(db, 'packages', pkg.id);
+                batch.update(pkgRef, {
+                  assigned_to: null,
+                  status: 'Pending',
+                  _lastModified: new Date().toISOString()
+                });
+              }
+              
+              await batch.commit();
+              console.log(`✅ Unassigned ${assignedPackages.length} packages in Firestore`);
+            } catch (firebaseErr) {
+              console.log('Could not update packages in Firestore:', firebaseErr);
+            }
           }
         }
+      } catch (pkgError) {
+        console.warn('⚠️ Could not unassign packages:', pkgError);
+      }
+      
+      // 2. Actually DELETE from Firebase (not just mark inactive)
+      // Always try to delete - don't rely on firebaseAvailable flag
+      try {
+        console.log(`🗑️ Attempting to delete driver ${driver.id} from Firestore...`);
+        const { getApp } = require('@react-native-firebase/app');
+        const { getFirestore, doc, deleteDoc } = require('@react-native-firebase/firestore');
+        const app = getApp();
+        const db = getFirestore(app);
+        await deleteDoc(doc(db, 'drivers', driver.id));
+        console.log('✅ Driver deleted from Firebase');
+        
+        // Wait a moment for Firestore to propagate the deletion
+        await new Promise(resolve => setTimeout(resolve, 500));
+      } catch (firebaseError: any) {
+        console.error('❌ Could not delete driver from Firebase:', firebaseError?.message || firebaseError);
+        // Continue with local deletion even if Firestore fails
       }
       
       // 2. Remove from local storage
@@ -262,10 +463,61 @@ export default function DriverListScreen({ navigation, route }: DriverListScreen
         }
       }
       
-      // 5. Update UI by removing from state
+      // 5. Update UI by removing from state immediately
       setDrivers(prevDrivers => prevDrivers.filter(d => d.id !== driver.id));
       
-      Alert.alert("Succès", "Livreur supprimé avec succès");
+      // 6. Force reload from local storage to ensure consistency
+      try {
+        const { getDriversLocally } = await import('../utils/localDatabase');
+        const refreshedDrivers = await getDriversLocally();
+        
+        // Also get pre-stored drivers
+        const activeStored = getActiveDrivers();
+        const storedWithDetails = activeStored.map(d => ({
+          ...d,
+          name: `Livreur ${d.id.split('-')[1]}`,
+          vehicle_type: 'Non spécifié',
+          phone: 'Non spécifié',
+          pin_code: '****',
+          source: 'stored'
+        }));
+        
+        // Merge and remove duplicates
+        const finalDrivers: any[] = [];
+        const seenIds = new Set<string>();
+        
+        refreshedDrivers.forEach((d: any) => {
+          if (!seenIds.has(d.id) && d.id !== driver.id) {
+            seenIds.add(d.id);
+            finalDrivers.push(d);
+          }
+        });
+        
+        storedWithDetails.forEach((d: any) => {
+          if (!seenIds.has(d.id)) {
+            seenIds.add(d.id);
+            finalDrivers.push(d);
+          }
+        });
+        
+        setDrivers(finalDrivers);
+        console.log('✅ UI updated, removed driver:', driver.id);
+      } catch (refreshError) {
+        console.log('Could not refresh drivers list:', refreshError);
+      }
+      
+      let successMessage = "Livreur supprimé avec succès";
+      if (unassignedCount > 0) {
+        successMessage += `\n\n📦 ${unassignedCount} colis ont été désassignés et remis en attente`;
+      }
+      Alert.alert("Succès", successMessage);
+      
+      // 7. Restart Firebase listener to get fresh data
+      setTimeout(() => {
+        console.log('🔄 Restarting Firebase listener after deletion...');
+        handleRefresh();
+      }, 1000);
+      
     } catch (error) {
       console.error('❌ Error removing driver:', error);
       Alert.alert("Erreur", "Impossible de supprimer le livreur");
@@ -393,9 +645,14 @@ export default function DriverListScreen({ navigation, route }: DriverListScreen
           <Text style={styles.backText}>← Retour</Text>
         </TouchableOpacity>
         <Text style={styles.headerTitle}>Livreurs (Équipe)</Text>
-        <TouchableOpacity onPress={loadPrestoredDrivers} style={styles.prestoredBtn}>
-          <Text style={styles.prestoredBtnText}>📋 IDs</Text>
-        </TouchableOpacity>
+        <View style={{ flexDirection: 'row', gap: 8 }}>
+          <TouchableOpacity onPress={handleRefresh} style={styles.refreshBtn}>
+            <Text style={styles.refreshBtnText}>↻</Text>
+          </TouchableOpacity>
+          <TouchableOpacity onPress={loadPrestoredDrivers} style={styles.prestoredBtn}>
+            <Text style={styles.prestoredBtnText}>📋 IDs</Text>
+          </TouchableOpacity>
+        </View>
       </View>
 
       {loading ? (
@@ -549,6 +806,19 @@ const styles = StyleSheet.create({
   sourceText: { fontSize: 12, color: '#D97706', fontWeight: '600' },
   warningBanner: { backgroundColor: '#FEF3C7', padding: 12, borderRadius: 8, marginBottom: 16 },
   warningText: { color: '#D97706', fontSize: 14, fontWeight: '600', textAlign: 'center' },
+  
+  // Refresh button
+  refreshBtn: {
+    paddingVertical: responsiveSize(6, 8),
+    paddingHorizontal: responsiveSize(10, 12),
+    backgroundColor: '#3B82F6',
+    borderRadius: BORDER_RADIUS.md,
+  },
+  refreshBtnText: {
+    color: '#FFFFFF',
+    fontSize: FONTS.compact.body,
+    fontWeight: '600',
+  },
   
   // Action buttons
   actionButtons: { 

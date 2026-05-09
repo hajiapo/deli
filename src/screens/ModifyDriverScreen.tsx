@@ -85,10 +85,9 @@ export default function ModifyDriverScreen({ navigation, route }: ModifyDriverSc
       
       if (isAdmin) {
         try {
-          const { getFirestore, doc, updateDoc } = require('firebase/firestore');
-          
-          // Get the Firebase app from React Native Firebase
-          const { default: app } = require('@react-native-firebase/app');
+          const { getApp } = require('@react-native-firebase/app');
+          const { getFirestore, doc, updateDoc } = require('@react-native-firebase/firestore');
+          const app = getApp();
           const db = getFirestore(app);
           await updateDoc(doc(db, 'drivers', driver.id), {
             name,
