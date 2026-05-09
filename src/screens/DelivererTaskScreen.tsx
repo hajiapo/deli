@@ -8,6 +8,7 @@ import { useLocalDatabase } from '../hooks/useLocalDatabase';
 import { updatePackage } from '../utils/localDatabase';
 import { showExportOptions } from '../utils/offlineExport';
 import { getStatusColor } from '../utils/statusColors';
+import ScannerModal from '../components/ScannerModal';
 import { 
   Responsive, 
   deviceType, 
@@ -43,6 +44,9 @@ export default function DelivererTaskScreen({ navigation }: DelivererTaskScreenP
   const [returnReason, setReturnReason] = useState('');
   const [returnReasonError, setReturnReasonError] = useState('');
   const [returningPackageId, setReturningPackageId] = useState<string | null>(null);
+
+  // Scanner state
+  const [scannerVisible, setScannerVisible] = useState(false);
 
   // Expanded package state
   const [expandedPackageId, setExpandedPackageId] = useState<string | null>(null);
@@ -220,6 +224,25 @@ export default function DelivererTaskScreen({ navigation }: DelivererTaskScreenP
     navigation.replace('Login');
   };
 
+  const handleScan = (data: string) => {
+    setScannerVisible(false);
+    
+    // Find package by ID or Ref Number
+    const foundPkg = packages.find(
+      p => p.id === data || p.ref_number.toLowerCase() === data.toLowerCase()
+    );
+
+    if (foundPkg) {
+      setExpandedPackageId(foundPkg.id);
+      ToastAndroid.show('Colis trouvé', ToastAndroid.SHORT);
+    } else {
+      Alert.alert(
+        'Colis introuvable',
+        'Ce colis ne fait pas partie de vos missions ou n\'existe pas.'
+      );
+    }
+  };
+
   const handleExport = () => {
     if (packages.length === 0) {
       Alert.alert('Aucun colis', 'Vous n\'avez aucun colis à exporter.');
@@ -288,6 +311,9 @@ export default function DelivererTaskScreen({ navigation }: DelivererTaskScreenP
             </View>
           </View>
           <View style={styles.headerActions}>
+            <TouchableOpacity onPress={() => setScannerVisible(true)} style={styles.scanBtn}>
+              <Text style={styles.scanText}>📷</Text>
+            </TouchableOpacity>
             <TouchableOpacity onPress={handleExport} style={styles.exportBtn}>
               <Text style={styles.exportText}>📤</Text>
             </TouchableOpacity>
@@ -507,6 +533,13 @@ export default function DelivererTaskScreen({ navigation }: DelivererTaskScreenP
         </View>
       </Modal>
 
+      {/* Scanner Modal */}
+      <ScannerModal
+        visible={scannerVisible}
+        onClose={() => setScannerVisible(false)}
+        onScan={handleScan}
+      />
+
     </SafeAreaView>
   );
 }
@@ -565,6 +598,14 @@ const styles = StyleSheet.create({
       } : {},
       android: {},
     }),
+  },
+  scanBtn: {
+    padding: responsiveSize(8, 12),
+    backgroundColor: '#3B82F6',
+    borderRadius: BORDER_RADIUS.responsive.button,
+  },
+  scanText: {
+    fontSize: responsiveFontSize(20, 22),
   },
   exportBtn: { 
     padding: responsiveSize(8, 12), 

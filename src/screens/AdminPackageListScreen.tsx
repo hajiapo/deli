@@ -17,6 +17,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useFocusEffect } from '@react-navigation/native';
 import { useLocalDatabase } from '../hooks/useLocalDatabase';
 import { AdminPackageListScreenProps } from '../types/navigation';
+import ScannerModal from '../components/ScannerModal';
 
 export default function AdminPackageListScreen({ navigation, route }: AdminPackageListScreenProps) {
   
@@ -61,6 +62,9 @@ export default function AdminPackageListScreen({ navigation, route }: AdminPacka
   const [editModalVisible, setEditModalVisible] = useState(false);
   const [deleteModalVisible, setDeleteModalVisible] = useState(false);
   const [packageToDelete, setPackageToDelete] = useState<any>(null);
+
+  // Scanner state
+  const [scannerVisible, setScannerVisible] = useState(false);
 
   // Edit package form states - all fields from create screen
   const [editSenderName, setEditSenderName] = useState('');
@@ -303,6 +307,18 @@ export default function AdminPackageListScreen({ navigation, route }: AdminPacka
     setDetailsModalVisible(true);
   };
 
+  const handleScan = (data: string) => {
+    setScannerVisible(false);
+    const foundPkg = packages.find(
+      (p: any) => p.id === data || p.ref_number.toLowerCase() === data.toLowerCase()
+    );
+    if (foundPkg) {
+      openPackageDetails(foundPkg);
+    } else {
+      Alert.alert('Introuvable', 'Ce colis n\'existe pas.');
+    }
+  };
+
   // Real-time listener for selected package
   useEffect(() => {
     if (!detailsModalVisible || !selectedPackageForDetailsId) return;
@@ -415,6 +431,9 @@ export default function AdminPackageListScreen({ navigation, route }: AdminPacka
             value={searchQuery}
             onChangeText={setSearchQuery}
           />
+          <TouchableOpacity onPress={() => setScannerVisible(true)} style={styles.adminScanBtn}>
+            <Text style={styles.adminScanText}>📷</Text>
+          </TouchableOpacity>
         </View>
 
         <View style={styles.filterRow}>
@@ -715,6 +734,13 @@ export default function AdminPackageListScreen({ navigation, route }: AdminPacka
         </View>
       </Modal>
 
+      {/* Scanner Modal */}
+      <ScannerModal
+        visible={scannerVisible}
+        onClose={() => setScannerVisible(false)}
+        onScan={handleScan}
+      />
+
       {/* Edit Package Modal */}
       <Modal visible={editModalVisible} transparent animationType="fade">
         <View style={styles.modalOverlay}>
@@ -988,12 +1014,29 @@ const styles = StyleSheet.create({
   refreshText: { fontSize: 20, color: '#3B82F6' },
 
   filtersContainer: { padding: 16, backgroundColor: '#fff', borderBottomWidth: 1, borderBottomColor: '#E5E7EB' },
-  searchContainer: { marginBottom: 12 },
+  searchContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginBottom: 12,
+  },
   searchInput: {
+    flex: 1,
     backgroundColor: '#F3F4F6',
-    padding: 12,
-    borderRadius: 12,
-    fontSize: 16,
+    borderRadius: 8,
+    padding: 10,
+    fontSize: 14,
+    color: '#111827',
+  },
+  adminScanBtn: {
+    backgroundColor: '#3B82F6',
+    padding: 10,
+    borderRadius: 8,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  adminScanText: {
+    fontSize: 18,
   },
   filterRow: { flexDirection: 'row' },
   filterGroup: { flex: 1, marginRight: 12 },
