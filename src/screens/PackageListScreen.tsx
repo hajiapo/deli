@@ -1,9 +1,12 @@
-import React, { useState, useEffect, useCallback } from 'react';
-import { View, Text, StyleSheet, FlatList, TouchableOpacity, RefreshControl, ActivityIndicator, Modal, ScrollView, Platform, Image, Share } from 'react-native';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
+import { View, Text, StyleSheet, FlatList, TouchableOpacity, RefreshControl, ActivityIndicator, Modal, ScrollView, Platform, Image } from 'react-native';
+import Share from 'react-native-share';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useFocusEffect } from '@react-navigation/native';
 import { useLocalDatabase } from '../hooks/useLocalDatabase';
 import PackageCard from '../components/PackageCard';
+import { QRCodeComponent } from '../components/QRCodeComponent';
+import { extractQRData, generateQRString } from '../utils/qrGenerator';
 
 interface PackageListScreenProps {
   navigation: any;
@@ -11,9 +14,11 @@ interface PackageListScreenProps {
 
 export default function PackageListScreen({ navigation }: PackageListScreenProps) {
   const [error, setError] = useState<string | null>(null);
+  const qrRef = useRef<any>(null);
   const [filterStatus, setFilterStatus] = useState<string>('all');
   const [selectedPkg, setSelectedPkg] = useState<any>(null);
   const [modalVisible, setModalVisible] = useState(false);
+  const [modalInstanceKey, setModalInstanceKey] = useState(0);
   
   const { packages = [], drivers = [], loading = false, syncing = false, refresh, assignPackageToDriver } = useLocalDatabase({ isAdmin: true });
 
@@ -169,6 +174,7 @@ Notes     : ${pkg.description || 'Aucune'}
               style={styles.packageRow} 
               onPress={() => {
                 setSelectedPkg(item);
+                setModalInstanceKey(k => k + 1);
                 setModalVisible(true);
               }}
             >
@@ -186,32 +192,73 @@ Notes     : ${pkg.description || 'Aucune'}
       )}
 
       {/* Printable Text Modal */}
-      <Modal visible={modalVisible} transparent animationType="slide">
+      <Modal key={modalInstanceKey} visible={modalVisible} transparent animationType="slide">
         <View style={styles.modalOverlay}>
           <View style={styles.modalContent}>
             <View style={styles.modalHeader}>
               <Text style={styles.modalTitle}>Détails à imprimer</Text>
               <View style={styles.headerButtons}>
-                <TouchableOpacity 
-                  onPress={() => {
-                    if (selectedPkg) {
-                      Share.share({
-                        message: getReceiptText(selectedPkg) + `\n\nQR Code: https://quickchart.io/qr?text=${encodeURIComponent(getReceiptText(selectedPkg))}&size=200`,
-                      }).catch(err => console.log(err));
+                <TouchableOpacity
+                  onPress={async () => {
+                    if (!selectedPkg) return;
+
+                    const receiptText = getReceiptText(selectedPkg);
+                    const qrData = extractQRData(selectedPkg);
+                    const qrString = generateQRString(qrData);
+
+                    const qr = qrRef.current;
+
+                    // Prefer exporting an actual scannable QR image
+                    try {
+                      if (qr?.toDataURL) {
+                        const dataUrl: string | undefined = await qr.toDataURL();
+                        if (dataUrl) {
+                          await Share.open({
+                            title: 'Exporter le QR',
+                            url: dataUrl,
+                            type: 'image/png',
+                            message: `📦 ${selectedPkg.ref_number}`,
+                          });
+                          return;
+                        }
+                      }
+                    } catch (e) {
+                      console.log('QR image export failed, falling back to text share:', e);
                     }
-                  }} 
+
+                    // Fallback: share text including QR payload (non-image)
+                    const fallbackMessage =
+                      `${receiptText}\n\n` +
+                      `QR_DATA (à régénérer) :\n${qrString}`;
+
+                    await Share.open({
+                      title: 'Exporter',
+                      message: fallbackMessage || 'Exporter',
+                    });
+                  }}
                   style={[styles.closeBtn, { backgroundColor: '#3B82F6', marginRight: 8 }]}
                 >
-                  <Text style={styles.closeBtnText}>Imprimer</Text>
+                  <Text style={styles.closeBtnText}>Exporter</Text>
                 </TouchableOpacity>
-                <TouchableOpacity onPress={() => setModalVisible(false)} style={styles.closeBtn}>
+                <TouchableOpacity
+                  onPress={() => {
+                    setModalVisible(false);
+                    setModalInstanceKey(k => k + 1);
+                  }}
+                  style={styles.closeBtn}
+                >
                   <Text style={styles.closeBtnText}>Fermer</Text>
                 </TouchableOpacity>
               </View>
             </View>
             
-            <ScrollView style={styles.printableContainer} contentContainerStyle={{ paddingBottom: 120 }}>
-              {selectedPkg && (
+            <View style={{ flex: 1 }}>
+              <ScrollView
+                style={styles.printableContainer}
+                contentContainerStyle={{ flexGrow: 1, paddingBottom: 220 }}
+                nestedScrollEnabled={true}
+              >
+                {selectedPkg && (
                 <>
                   <Text selectable={true} style={styles.printableText}>
                     {`----------------------------------
@@ -246,26 +293,18 @@ Notes     : ${selectedPkg.description || 'Aucune'}
 ----------------------------------`}
                   </Text>
                   <View style={styles.qrContainer}>
-                    <Image 
-                      source={{ 
-                        uri: `https://quickchart.io/qr?text=${encodeURIComponent(
-`RÉFÉRENCE : ${selectedPkg.ref_number}
-DATE CRÉA : ${selectedPkg.created_at ? new Date(selectedPkg.created_at).toLocaleDateString('fr-FR') : 'N/A'}
-EXPÉDITEUR : ${selectedPkg.sender_name || 'N/A'} - ${selectedPkg.sender_phone || 'N/A'}
-DESTINATAIRE : ${selectedPkg.customer_name || 'N/A'} - ${selectedPkg.customer_phone || 'N/A'}
-ADRESSE : ${selectedPkg.customer_address || 'N/A'}
-POIDS : ${selectedPkg.weight || 'N/A'}
-PRIX : ${selectedPkg.is_paid ? 'Payé' : ((selectedPkg.price || 0) + ' DH')}
-`
-                        )}&size=200&margin=1`
+                    <QRCodeComponent
+                      data={selectedPkg}
+                      size={250}
+                      getRef={(ref: any) => {
+                        qrRef.current = ref;
                       }}
-                      style={{ width: 200, height: 200 }}
-                      resizeMode="contain"
                     />
                   </View>
                 </>
-              )}
-            </ScrollView>
+                )}
+              </ScrollView>
+            </View>
           </View>
         </View>
       </Modal>
@@ -404,15 +443,15 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: 'rgba(0,0,0,0.5)',
     justifyContent: 'center',
-    alignItems: 'center',
+    alignItems: 'stretch',
     padding: 16,
   },
   modalContent: {
     backgroundColor: '#FFFFFF',
     borderRadius: 12,
     width: '100%',
-    maxHeight: '85%',
-    overflow: 'hidden',
+    overflow: 'visible',
+    flexDirection: 'column',
   },
   modalHeader: {
     flexDirection: 'row',
@@ -443,6 +482,7 @@ const styles = StyleSheet.create({
     fontSize: 14,
   },
   printableContainer: {
+    flex: 1,
     padding: 20,
     backgroundColor: '#FFFFFF',
   },
@@ -455,8 +495,15 @@ const styles = StyleSheet.create({
   qrContainer: {
     alignItems: 'center',
     justifyContent: 'center',
-    marginVertical: 20,
+    marginTop: 12,
+    marginBottom: 4,
     padding: 10,
     backgroundColor: '#FFFFFF',
+  },
+  qrLabel: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#111827',
+    marginBottom: 12,
   },
 });

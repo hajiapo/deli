@@ -1,4 +1,4 @@
-import React, { useState, useCallback, useEffect, useMemo } from 'react';
+import React, { useState, useCallback, useEffect, useMemo, useRef } from 'react';
 import {
   View,
   Text,
@@ -15,12 +15,15 @@ import {
   Linking,
   Clipboard,
 } from 'react-native';
+import Share from 'react-native-share';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useFocusEffect } from '@react-navigation/native';
 import { useLocalDatabase } from '../hooks/useLocalDatabase';
 import { AdminPackageListScreenProps } from '../types/navigation';
 import ScannerModal from '../components/ScannerModal';
+import { QRCodeComponent } from '../components/QRCodeComponent';
 import { parseDriverReport, autoUpdatePackagesFromReport, validateReport } from '../utils/driverReportParser';
+import { extractQRData, generateQRString } from '../utils/qrGenerator';
 
 export default function AdminPackageListScreen({ navigation, route }: AdminPackageListScreenProps) {
   
@@ -68,6 +71,9 @@ export default function AdminPackageListScreen({ navigation, route }: AdminPacka
   const [whatsappModalVisible, setWhatsappModalVisible] = useState(false);
   const [selectedDriverForWhatsapp, setSelectedDriverForWhatsapp] = useState('');
   const [sharingViaWhatsapp, setSharingViaWhatsapp] = useState(false);
+
+  // QR refs per selected package (used for exporting scannable QR images)
+  const qrRefsByPkgId = useRef<Record<string, any>>({});
 
   // Driver report monitoring state
   const [reportMonitorModalVisible, setReportMonitorModalVisible] = useState(false);
@@ -219,55 +225,67 @@ export default function AdminPackageListScreen({ navigation, route }: AdminPacka
 
       // Get selected packages details
       const selectedPackages = packages.filter((pkg: any) => selectedPackageIds.has(pkg.id));
-      
-      // Format WhatsApp message
-      let message = `📦 *MISSION DE LIVRAISON* 🚚\n\n`;
-      message += `👤 *Livreur:* ${selectedDriver.name}\n`;
-      message += `🚗 *Véhicule:* ${selectedDriver.vehicle_type}\n`;
-      message += `📱 *Téléphone:* ${selectedDriver.phone || 'Non spécifié'}\n\n`;
-      message += `📋 *LISTE DES COLIS (${selectedPackages.length})*\n`;
-      message += `${'='.repeat(30)}\n\n`;
 
-      selectedPackages.forEach((pkg: any, index: number) => {
-        message += `${index + 1}. 📦 *${pkg.ref_number}*\n`;
-        message += `   👤 Client: ${pkg.customer_name || 'N/A'}\n`;
-        message += `   📍 Adresse: ${pkg.customer_address || 'N/A'}\n`;
-        message += `   📞 Téléphone: ${pkg.customer_phone || 'N/A'}\n`;
-        message += `   💰 Prix: ${pkg.is_paid ? 'Payé' : `${pkg.price || 0} DH`}\n`;
-        if (pkg.customer_phone_2) {
-          message += `   📞 Téléphone 2: ${pkg.customer_phone_2}\n`;
+      // Respect limitation: send minimal per package (no huge text)
+      // Driver will scan QR images from WhatsApp messages.
+      const baseInstructions = `Scan QR pour ouvrir le colis.`;
+      for (const pkg of selectedPackages) {
+        const customerPhone2Line = pkg.customer_phone_2 ? `📞 Téléphone 2: ${pkg.customer_phone_2}` : '';
+        const priceLine = pkg.is_paid ? 'Payé' : `${pkg.price || 0} DH`;
+        const gpsLine =
+          pkg.gps_lat !== undefined && pkg.gps_lng !== undefined
+            ? `🛰️ GPS: ${pkg.gps_lat}, ${pkg.gps_lng}`
+            : '🛰️ GPS: N/A';
+
+        const shortText =
+          `📦 Réf: ${pkg.ref_number}\n` +
+          `👤 Nom: ${pkg.customer_name || 'Client'}\n` +
+          `📍 Adresse: ${pkg.customer_address || 'Adresse'}\n` +
+          `📞 Téléphone 1: ${pkg.customer_phone || 'N/A'}\n` +
+          `${customerPhone2Line ? customerPhone2Line + '\n' : ''}` +
+          `${gpsLine}\n` +
+          `📝 Description: ${pkg.description || 'Aucune'}\n` +
+          `💰 Prix: ${priceLine}\n` +
+          `📅 Date limite: ${pkg.limit_date || 'N/A'}\n\n` +
+          `${baseInstructions}`;
+
+        const qrRef = qrRefsByPkgId.current[pkg.id];
+
+        if (!qrRef || !qrRef.toDataURL) {
+          await Share.open({
+            title: 'Exporter le colis',
+            message: shortText,
+          });
+          continue;
         }
-        message += `   📝 Description: ${pkg.description || 'N/A'}\n\n`;
-      });
 
-      message += `\n${'='.repeat(30)}\n`;
-      message += `📊 *Total à encaisser:* ${selectedPackages.reduce((sum, pkg) => sum + (pkg.is_paid ? 0 : (pkg.price || 0)), 0)} DH\n\n`;
-      message += `⚠️ *Instructions:*\n`;
-      message += `• Veuillez confirmer la réception de cette mission\n`;
-      message += `• Appelez les clients avant la livraison\n`;
-      message += `• Signalez tout problème immédiatement\n\n`;
-      message += `*Merci pour votre travail!* 💪\n`;
-      message += `_Généré depuis Delivry App_`;
+        // Export scannable QR image
+        let dataUrl: string | null = null;
+        try {
+          dataUrl = await qrRef.toDataURL();
+        } catch (e) {
+          dataUrl = null;
+        }
 
-      // Clean phone number for WhatsApp
-      const cleanPhone = selectedDriver.phone?.replace(/[^0-9]/g, '');
-      if (!cleanPhone) {
-        Alert.alert('Erreur', 'Le livreur n\'a pas de numéro de téléphone valide.');
-        return;
+        if (!dataUrl) {
+          await Share.open({
+            title: 'Exporter le colis',
+            message: shortText,
+          });
+          continue;
+        }
+
+        await Share.open({
+          title: `Partager QR - ${pkg.ref_number}`,
+          type: 'image/png',
+          url: dataUrl,
+          message: shortText,
+        });
       }
 
-      const whatsappUrl = `https://wa.me/${cleanPhone}?text=${encodeURIComponent(message)}`;
-      
-      // Check if WhatsApp is available
-      const supported = await Linking.canOpenURL(whatsappUrl);
-      if (supported) {
-        await Linking.openURL(whatsappUrl);
-        setWhatsappModalVisible(false);
-        setSelectedDriverForWhatsapp('');
-        setSelectedPackageIds(new Set());
-      } else {
-        Alert.alert('WhatsApp non disponible', 'WhatsApp n\'est pas installé sur cet appareil.');
-      }
+      setWhatsappModalVisible(false);
+      setSelectedDriverForWhatsapp('');
+      setSelectedPackageIds(new Set());
     } catch (error) {
       console.error('WhatsApp sharing error:', error);
       Alert.alert('Erreur', 'Impossible de partager via WhatsApp.');
@@ -1029,6 +1047,25 @@ export default function AdminPackageListScreen({ navigation, route }: AdminPacka
           </View>
         </View>
       </Modal>
+
+      {/* Hidden QR renderers for exporting scannable QR images */}
+      {whatsappModalVisible && Array.from(selectedPackageIds).map((pkgId) => {
+        const pkg = packages.find((p: any) => p.id === pkgId);
+        if (!pkg) return null;
+
+        // Render QR off-screen; capture its ref for toDataURL()
+        return (
+          <View key={pkgId} style={{ width: 1, height: 1, opacity: 0, position: 'absolute' }}>
+            <QRCodeComponent
+              data={pkg}
+              size={250}
+              getRef={(ref: any) => {
+                qrRefsByPkgId.current[pkgId] = ref;
+              }}
+            />
+          </View>
+        );
+      })}
 
       {/* Driver Report Monitoring Modal */}
       <Modal visible={reportMonitorModalVisible} transparent animationType="fade">
