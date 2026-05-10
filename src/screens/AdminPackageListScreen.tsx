@@ -24,7 +24,7 @@ import { parseDriverReport, autoUpdatePackagesFromReport, validateReport } from 
 
 export default function AdminPackageListScreen({ navigation, route }: AdminPackageListScreenProps) {
   
-  const { packages, drivers, loading, refresh, archivePackages, unarchivePackages, assignPackageToDriver } = useLocalDatabase({ isAdmin: true });
+  const { packages, drivers, loading, refresh, archivePackages, unarchivePackages, assignPackageToDriver, deletePackages } = useLocalDatabase({ isAdmin: true });
   const [refreshing, setRefreshing] = useState(false);
 
   const onRefresh = useCallback(async () => {
@@ -33,12 +33,7 @@ export default function AdminPackageListScreen({ navigation, route }: AdminPacka
     setRefreshing(false);
   }, [refresh]);
 
-  useFocusEffect(
-    useCallback(() => {
-      refresh();
-    }, [refresh])
-  );
-
+  
   // Filter states
   const [searchQuery, setSearchQuery] = useState('');
   const [filterStatus, setFilterStatus] = useState('all');
@@ -171,6 +166,18 @@ export default function AdminPackageListScreen({ navigation, route }: AdminPacka
       else newSet.add(pkgId);
       return newSet;
     });
+  };
+
+  const toggleSelectAll = () => {
+    const allSelected = filteredPackages.every(pkg => selectedPackageIds.has(pkg.id));
+    if (allSelected) {
+      // Deselect all
+      setSelectedPackageIds(new Set());
+    } else {
+      // Select all filtered packages
+      const allIds = new Set(filteredPackages.map(pkg => pkg.id));
+      setSelectedPackageIds(allIds);
+    }
   };
 
   const handleBulkAssign = async () => {
@@ -466,15 +473,29 @@ export default function AdminPackageListScreen({ navigation, route }: AdminPacka
     }
   };
 
-  const renderTableHeader = () => (
-    <View style={styles.tableHeader}>
-      <Text style={styles.headerCheckbox}>#</Text>
-      <Text style={[styles.headerText, styles.headerPkg]}>Colis</Text>
-      <Text style={[styles.headerText, styles.headerCustomer]}>Client</Text>
-      <Text style={[styles.headerText, styles.headerPrice]}>Prix</Text>
-      <Text style={[styles.headerText, styles.headerStatus]}>Statut</Text>
-    </View>
-  );
+  const renderTableHeader = () => {
+    const allSelected = filteredPackages.length > 0 && filteredPackages.every(pkg => selectedPackageIds.has(pkg.id));
+    const someSelected = filteredPackages.some(pkg => selectedPackageIds.has(pkg.id));
+
+    return (
+      <View style={styles.tableHeader}>
+        <TouchableOpacity onPress={toggleSelectAll} style={styles.checkbox}>
+          <View style={[
+            styles.checkboxInner,
+            allSelected && styles.checkboxChecked,
+            someSelected && !allSelected && styles.checkboxIndeterminate
+          ]}>
+            {allSelected && <Text style={styles.checkmark}>✓</Text>}
+            {someSelected && !allSelected && <Text style={styles.checkmark}>−</Text>}
+          </View>
+        </TouchableOpacity>
+        <Text style={[styles.headerText, styles.headerPkg]}>Colis</Text>
+        <Text style={[styles.headerText, styles.headerCustomer]}>Client</Text>
+        <Text style={[styles.headerText, styles.headerPrice]}>Prix</Text>
+        <Text style={[styles.headerText, styles.headerStatus]}>Statut</Text>
+      </View>
+    );
+  };
 
   const openPackageDetails = (pkg: any) => {
     setSelectedPackageForDetailsId(pkg.id);
@@ -789,12 +810,14 @@ export default function AdminPackageListScreen({ navigation, route }: AdminPacka
 
       {/* Summary & Bulk Controls */}
       <View style={styles.summaryContainer}>
-        <Text style={styles.summaryText}>
-          Total: <Text style={styles.summaryBold}>{filteredPackages.length}</Text> colis
-          {selectedPackageIds.size > 0 && (
-            <Text> · Sélection: <Text style={styles.summaryBold}>{selectedPackageIds.size}</Text></Text>
-          )}
-        </Text>
+        <View style={styles.summaryRow}>
+          <Text style={styles.summaryText}>
+            Total: <Text style={styles.summaryBold}>{filteredPackages.length}</Text> colis
+            {selectedPackageIds.size > 0 && (
+              <Text> · Sélection: <Text style={styles.summaryBold}>{selectedPackageIds.size}</Text></Text>
+            )}
+          </Text>
+        </View>
         <View style={styles.bulkControls}>
           {selectedPackageIds.size > 0 && (
             <>
@@ -836,17 +859,49 @@ export default function AdminPackageListScreen({ navigation, route }: AdminPacka
                   </TouchableOpacity>
                 </>
               ) : (
-                <TouchableOpacity
-                  style={[styles.bulkAssignBtn, { backgroundColor: '#10B981' }]}
-                  onPress={() => {
-                    const ids = Array.from(selectedPackageIds);
-                    void unarchivePackages(ids);
-                    setSelectedPackageIds(new Set());
-                  }}
-                  disabled={selectedPackageIds.size === 0}
-                >
-                  <Text style={styles.bulkAssignText}>Restaurer</Text>
-                </TouchableOpacity>
+                <>
+                  <TouchableOpacity
+                    style={[styles.bulkAssignBtn, { backgroundColor: '#10B981' }]}
+                    onPress={() => {
+                      const ids = Array.from(selectedPackageIds);
+                      void unarchivePackages(ids);
+                      setSelectedPackageIds(new Set());
+                    }}
+                    disabled={selectedPackageIds.size === 0}
+                  >
+                    <Text style={styles.bulkAssignText}>Restaurer</Text>
+                  </TouchableOpacity>
+
+                  <TouchableOpacity
+                    style={[styles.bulkAssignBtn, { backgroundColor: '#EF4444' }]}
+                    onPress={() => {
+                      Alert.alert(
+                        'Confirmer la suppression',
+                        `Êtes-vous sûr de vouloir supprimer ${selectedPackageIds.size} colis archivé(s) de manière permanente?\n\nCette action ne peut pas être annulée.`,
+                        [
+                          { text: 'Annuler', style: 'cancel' },
+                          {
+                            text: 'Supprimer',
+                            style: 'destructive',
+                            onPress: async () => {
+                              try {
+                                const ids = Array.from(selectedPackageIds);
+                                await deletePackages(ids);
+                                setSelectedPackageIds(new Set());
+                                Alert.alert('Succès', `${ids.length} colis supprimé(s) avec succès`);
+                              } catch (error: any) {
+                                Alert.alert('Erreur', error?.message || 'Impossible de supprimer les colis');
+                              }
+                            }
+                          }
+                        ]
+                      );
+                    }}
+                    disabled={selectedPackageIds.size === 0}
+                  >
+                    <Text style={styles.bulkAssignText}>Supprimer</Text>
+                  </TouchableOpacity>
+                </>
               )}
             </>
           )}
@@ -1114,7 +1169,7 @@ export default function AdminPackageListScreen({ navigation, route }: AdminPacka
                 <Text style={styles.actionBtnText}>🗑️</Text>
               </TouchableOpacity>
             </View>
-            <ScrollView style={{ maxHeight: 500 }}>
+            <ScrollView style={{ maxHeight: 500 }} contentContainerStyle={{ paddingBottom: 20 }}>
               <Text style={styles.sectionTitle}>1. Informations Générales</Text>
 
               <View style={styles.filterGroup}>
@@ -1401,13 +1456,16 @@ const styles = StyleSheet.create({
   pickerText: { fontSize: 16, color: '#111827' },
 
   summaryContainer: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
     padding: 12,
     backgroundColor: '#EFF6FF',
   },
-  bulkControls: { flexDirection: 'row', alignItems: 'center' },
+  summaryRow: {
+    flexDirection: 'row',
+    justifyContent: 'flex-end',
+    alignItems: 'center',
+    marginBottom: 8,
+  },
+  bulkControls: { flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', gap: 8 },
   bulkToggle: {
     backgroundColor: '#F3F4F6',
     paddingHorizontal: 12,
@@ -1424,12 +1482,11 @@ const styles = StyleSheet.create({
   bulkTextActive: { color: '#fff' },
   bulkAssignBtn: {
     backgroundColor: '#10B981',
-    paddingHorizontal: 16,
-    paddingVertical: 12,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
     borderRadius: 8,
-    marginLeft: 8,
   },
-  bulkAssignText: { color: '#fff', fontSize: 16, fontWeight: '600' },
+  bulkAssignText: { color: '#fff', fontSize: 14, fontWeight: '600' },
 
   actionButtons: {
     flexDirection: 'row',
@@ -1509,6 +1566,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   checkboxChecked: { backgroundColor: '#10B981', borderColor: '#10B981' },
+  checkboxIndeterminate: { backgroundColor: '#6B7280', borderColor: '#6B7280' },
   checkmark: { color: '#fff', fontWeight: 'bold' },
   cellPkg: { flex: 2.4 },
   pkgCellContainer: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
@@ -1532,13 +1590,14 @@ const styles = StyleSheet.create({
   emptyText: { fontSize: 16, color: '#6B7280', textAlign: 'center' },
 
   // Modal
-  modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'center', alignItems: 'center', padding: 24 },
+  modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'center', alignItems: 'center', padding: 16 },
   modalContent: {
     backgroundColor: '#fff',
-    padding: 24,
+    padding: 20,
     borderRadius: 12,
-    minWidth: 350,
-    maxHeight: '90%',
+    minWidth: 320,
+    maxWidth: '95%',
+    maxHeight: '85%',
   },
   modalTitle: {
     fontSize: 18,
@@ -1563,14 +1622,17 @@ const styles = StyleSheet.create({
   },
   modalButtons: {
     flexDirection: 'row',
-    marginTop: 8,
+    marginTop: 16,
+    gap: 12,
+    paddingBottom: 8,
   },
   modalButtonSpacing: { marginRight: 12 },
   modalBtn: {
     flex: 1,
-    paddingVertical: 12,
+    paddingVertical: 14,
     borderRadius: 8,
     alignItems: 'center',
+    minHeight: 48,
   },
   cancelBtn: {
     backgroundColor: '#6B7280',
@@ -1592,7 +1654,7 @@ const styles = StyleSheet.create({
   assignText: { color: '#fff', fontWeight: '600', fontSize: 16 },
   
   // Driver list styles
-  driverList: { maxHeight: 200 },
+  driverList: { maxHeight: 200, paddingBottom: 16 },
   driverOption: {
     backgroundColor: '#fff',
     padding: 12,
@@ -1609,7 +1671,7 @@ const styles = StyleSheet.create({
   driverVehicleType: { fontSize: 14, color: '#6B7280' },
 
   // Additional styles for edit modal
-  sectionTitle: { fontSize: 18, fontWeight: '800', color: '#1F2937', marginTop: 16, marginBottom: 16 },
+  sectionTitle: { fontSize: 18, fontWeight: '800', color: '#1F2937', marginTop: 12, marginBottom: 12 },
   row: { flexDirection: 'row', justifyContent: 'space-between' },
   switchGroup: {
     flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',

@@ -269,7 +269,7 @@ export default function AddPackageScreen({ navigation }: AddPackageScreenProps) 
           <TouchableOpacity style={[styles.submitBtn, loading && styles.submitBtnDisabled]} onPress={handleAddPackage} disabled={loading}>
             {loading ? <ActivityIndicator color="#fff" /> : <Text style={styles.submitText}>Créer le Colis</Text>}
           </TouchableOpacity>
-          <View style={{ height: 40 }} />
+          <View style={{ height: 80 }} />
         </ScrollView>
       </KeyboardAvoidingView>
     </SafeAreaView>
@@ -289,7 +289,7 @@ const styles = StyleSheet.create({
   backText: { color: '#3B82F6', fontSize: 16, fontWeight: '600' },
   headerTitle: { fontSize: 18, fontWeight: '700', color: '#111827' },
   scanIndicator: { fontSize: 12, color: '#10B981', fontWeight: '600', marginTop: 2 },
-  scrollContent: { padding: 20 },
+  scrollContent: { padding: 20, paddingBottom: 100, flexGrow: 1 },
   sectionTitle: { fontSize: 18, fontWeight: '800', color: '#1F2937', marginTop: 16, marginBottom: 16 },
   row: { flexDirection: 'row', justifyContent: 'space-between' },
   inputGroup: { marginBottom: 16 },
@@ -303,7 +303,7 @@ const styles = StyleSheet.create({
     marginBottom: 32, backgroundColor: '#FFFFFF', padding: 16, borderRadius: 12,
     borderWidth: 1, borderColor: '#D1D5DB',
   },
-  submitBtn: { backgroundColor: '#111827', paddingVertical: 16, borderRadius: 12, alignItems: 'center' },
+  submitBtn: { backgroundColor: '#111827', paddingVertical: 16, borderRadius: 12, alignItems: 'center', minHeight: 50, marginTop: 20 },
   submitBtnDisabled: { backgroundColor: '#9CA3AF' },
   inputDisabled: { backgroundColor: '#F3F4F6', color: '#9CA3AF' },
   disabledNote: { fontSize: 11, color: '#6B7280', marginTop: 4, fontStyle: 'italic' },

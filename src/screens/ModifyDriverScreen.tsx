@@ -283,7 +283,7 @@ const styles = StyleSheet.create({
   },
   backText: { color: '#3B82F6', fontSize: 16, fontWeight: '600' },
   headerTitle: { fontSize: 18, fontWeight: '700', color: '#111827' },
-  scrollContent: { padding: 20, paddingTop: 30 },
+  scrollContent: { padding: 20, paddingTop: 30, paddingBottom: 100, flexGrow: 1 },
   
   infoBanner: {
     backgroundColor: '#E0E7FF',
@@ -376,7 +376,8 @@ const styles = StyleSheet.create({
     paddingVertical: 16, 
     borderRadius: 12, 
     alignItems: 'center', 
-    marginTop: 20 
+    marginTop: 30,
+    minHeight: 50,
   },
   saveBtnDisabled: { backgroundColor: '#9CA3AF' },
   saveText: { color: '#FFFFFF', fontSize: 16, fontWeight: '700' },

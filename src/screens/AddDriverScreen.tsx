@@ -337,7 +337,7 @@ const styles = StyleSheet.create({
   },
   backText: { color: '#3B82F6', fontSize: 16, fontWeight: '600' },
   headerTitle: { fontSize: 18, fontWeight: '700', color: '#111827' },
-  scrollContent: { padding: 20, paddingTop: 30 },
+  scrollContent: { padding: 20, paddingTop: 30, paddingBottom: 100, flexGrow: 1 },
   inputGroup: { marginBottom: 24 },
   label: { fontSize: 14, fontWeight: '700', color: '#4B5563', marginBottom: 8 },
   input: {
@@ -355,7 +355,7 @@ const styles = StyleSheet.create({
   pillActive: { backgroundColor: '#3B82F6', borderColor: '#3B82F6' },
   pillText: { color: '#4B5563', fontWeight: '600' },
   pillTextActive: { color: '#FFFFFF' },
-  submitBtn: { backgroundColor: '#111827', paddingVertical: 16, borderRadius: 12, alignItems: 'center', marginTop: 20 },
+  submitBtn: { backgroundColor: '#111827', paddingVertical: 16, borderRadius: 12, alignItems: 'center', marginTop: 30, minHeight: 50 },
   submitBtnDisabled: { backgroundColor: '#9CA3AF' },
   submitText: { color: '#FFFFFF', fontSize: 16, fontWeight: '700' },
   

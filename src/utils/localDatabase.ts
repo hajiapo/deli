@@ -29,10 +29,10 @@ export const getDriversLocally = async (): Promise<Driver[]> => {
 export const storeDriverLocally = async (driver: Driver): Promise<void> => {
   try {
     const drivers = await getDriversLocally();
-    
+
     // Check if driver already exists
     const existingIndex = drivers.findIndex(d => d.id === driver.id);
-    
+
     if (existingIndex >= 0) {
       // Update existing driver
       drivers[existingIndex] = {
@@ -48,7 +48,7 @@ export const storeDriverLocally = async (driver: Driver): Promise<void> => {
         _version: '1.0'
       });
     }
-    
+
     await AsyncStorage.setItem(DRIVERS_KEY, JSON.stringify(drivers));
     console.log(`💾 Driver ${driver.id} stored locally`);
   } catch (error) {
@@ -72,27 +72,27 @@ export const removeDriverLocally = async (driverId: string): Promise<void> => {
 export const syncPackagesFromFirestore = async (driverId?: string, isAdmin = false): Promise<void> => {
   try {
     console.log(`🔄 Starting Firebase sync: driverId=${driverId}, isAdmin=${isAdmin}`);
-    
+
     // Check if we have Firebase Authentication
     // Note: Pre-stored drivers (DRV-001 to DRV-020) work without Firebase Auth
     // Skip Firebase sync for pre-stored drivers to avoid permission errors
     const isPreStored = driverId ? isPreStoredDriverId(driverId) : false;
-    
+
     if (isPreStored) {
       console.log('🔒 Skipping Firebase sync for pre-stored driver ID:', driverId);
       return;
     }
-    
+
     // For ADMIN or non-pre-stored drivers, try Firebase sync
     // Admins can sync without Firebase Auth if Firestore rules allow
     try {
       const { getApp } = require('@react-native-firebase/app');
       const { getAuth } = require('@react-native-firebase/auth');
       const { getFirestore: getFirebaseFirestore, collection, getDocs, query: firestoreQuery, where } = require('@react-native-firebase/firestore');
-      
+
       const app = getApp();
       const db = getFirebaseFirestore(app);
-      
+
       // For admin, try to sync without auth check (if Firestore rules allow)
       if (isAdmin) {
         console.log('👑 Admin sync - attempting direct Firestore access');
@@ -141,51 +141,51 @@ export const syncPackagesFromFirestore = async (driverId?: string, isAdmin = fal
           // Fall through to auth-based sync
         }
       }
-      
+
       // For non-admin or if admin direct sync failed, check Firebase Auth
       const authInstance = getAuth(app);
       const currentUser = authInstance.currentUser;
-      
+
       console.log('🔐 Firebase auth currentUser:', currentUser ? 'Yes' : 'No');
-      
+
       if (!currentUser) {
         console.log('🔒 No Firebase user authenticated - skipping Firestore sync');
         return;
       }
-      
+
       // Get user token to ensure fresh claims
       const tokenResult = await currentUser.getIdTokenResult(true);
       const claims = tokenResult.claims;
-      
+
       console.log('🔐 Firebase claims:', claims);
-      
+
       // Check if user has permission based on claims
       const isUserAdmin = claims?.admin === true;
       const userDriverId = claims?.driverId;
-      
+
       // If driver is trying to sync but claims don't match, skip
       if (driverId && userDriverId && userDriverId !== driverId && !isUserAdmin) {
         console.log(`🔒 Driver ID mismatch: ${userDriverId} vs ${driverId} - skipping sync`);
         return;
       }
-      
+
       // Use React Native Firebase Firestore v22 modular API
       const packagesCollection = collection(db, 'packages');
       let queryRef = packagesCollection;
-      
+
       // Admin syncs all packages, drivers only sync their assigned + pending
       if (!isAdmin && driverId) {
         queryRef = firestoreQuery(packagesCollection, where('assigned_to', 'in', [driverId, null, '']));
       }
-      
+
       const snapshot = await getDocs(queryRef);
       const packages: Package[] = [];
-      
+
       snapshot.forEach((doc: any) => {
         const data = doc.data() as any;
         packages.push({ id: doc.id, ...data });
       });
-      
+
       await AsyncStorage.setItem(PACKAGES_KEY, JSON.stringify(packages));
       console.log(`📥 Synced ${packages.length} packages from Firestore`);
     } catch (firebaseError) {
@@ -206,17 +206,17 @@ export const syncDriversFromFirestore = async (): Promise<void> => {
       const { getApp } = require('@react-native-firebase/app');
       const { getAuth } = require('@react-native-firebase/auth');
       const { getFirestore: getFirebaseFirestore, collection, getDocs } = require('@react-native-firebase/firestore');
-      
+
       const app = getApp();
       const db = getFirebaseFirestore(app);
-      
+
       // Try direct sync first (for admin without Firebase Auth)
       console.log('👑 Attempting direct driver sync from Firestore');
-      
+
       try {
         const snapshot = await getDocs(collection(db, 'drivers'));
         const firebaseDrivers: Driver[] = [];
-        
+
         snapshot.forEach((doc: any) => {
           const driverData = doc.data() as any;
           // Only include active drivers from Firebase
@@ -225,20 +225,20 @@ export const syncDriversFromFirestore = async (): Promise<void> => {
             firebaseDrivers.push({ id: doc.id, ...driverData });
           }
         });
-        
+
         // Get existing local drivers
         const localDrivers = await getDriversLocally();
-        
+
         // Merge drivers: Firebase drivers take precedence, but keep local drivers that aren't in Firebase
         const mergedDrivers: Driver[] = [...firebaseDrivers];
         const firebaseIds = new Set(firebaseDrivers.map(d => d.id));
-        
+
         localDrivers.forEach(localDriver => {
           if (!firebaseIds.has(localDriver.id)) {
             mergedDrivers.push(localDriver);
           }
         });
-        
+
         await AsyncStorage.setItem(DRIVERS_KEY, JSON.stringify(mergedDrivers));
         console.log(`📥 Synced ${firebaseDrivers.length} drivers from Firestore, total: ${mergedDrivers.length} drivers`);
         return;
@@ -246,30 +246,30 @@ export const syncDriversFromFirestore = async (): Promise<void> => {
         console.log('⚠️ Direct driver sync failed, trying with auth:', directSyncError);
         // Fall through to auth-based sync
       }
-      
+
       // If direct sync failed, try with Firebase Auth
       const authInstance = getAuth(app);
       const currentUser = authInstance.currentUser;
-      
+
       if (!currentUser) {
         console.log('🔒 No Firebase user authenticated - skipping Firestore sync');
         return;
       }
-      
+
       // Get user token to ensure fresh claims
       const tokenResult = await currentUser.getIdTokenResult(true);
       const claims = tokenResult.claims;
-      
+
       // Only admins can sync drivers
       if (!claims?.admin) {
         console.log('🔒 User is not admin - skipping drivers sync');
         return;
       }
-      
+
       // Use React Native Firebase Firestore v22 modular API
       const snapshot = await getDocs(collection(db, 'drivers'));
       const firebaseDrivers: Driver[] = [];
-      
+
       snapshot.forEach((doc: any) => {
         const driverData = doc.data() as any;
         // Only include active drivers from Firebase
@@ -278,20 +278,20 @@ export const syncDriversFromFirestore = async (): Promise<void> => {
           firebaseDrivers.push({ id: doc.id, ...driverData });
         }
       });
-      
+
       // Get existing local drivers
       const localDrivers = await getDriversLocally();
-      
+
       // Merge drivers: Firebase drivers take precedence, but keep local drivers that aren't in Firebase
       const mergedDrivers: Driver[] = [...firebaseDrivers];
       const firebaseIds = new Set(firebaseDrivers.map(d => d.id));
-      
+
       localDrivers.forEach(localDriver => {
         if (!firebaseIds.has(localDriver.id)) {
           mergedDrivers.push(localDriver);
         }
       });
-      
+
       await AsyncStorage.setItem(DRIVERS_KEY, JSON.stringify(mergedDrivers));
       console.log(`📥 Synced ${firebaseDrivers.length} drivers from Firestore, total: ${mergedDrivers.length} drivers`);
     } catch (firebaseError) {
@@ -316,6 +316,18 @@ export const upsertPackageLocally = async (pkg: Package): Promise<void> => {
   await AsyncStorage.setItem(PACKAGES_KEY, JSON.stringify(packages));
 };
 
+export const deletePackageLocally = async (packageId: string): Promise<void> => {
+  try {
+    const packages = await getPackagesLocally(undefined, true);
+    const filteredPackages = packages.filter(p => p.id !== packageId);
+    await AsyncStorage.setItem(PACKAGES_KEY, JSON.stringify(filteredPackages));
+    console.log(`🗑️ Package ${packageId} deleted from local storage`);
+  } catch (error) {
+    console.error('Error deleting package locally:', error);
+    throw error;
+  }
+};
+
 export const getLastSyncTime = async (): Promise<string> => {
   try {
     const time = await AsyncStorage.getItem(LAST_SYNC_KEY);
@@ -330,8 +342,8 @@ export const getPackagesLocally = async (driverId?: string, includeArchived: boo
   try {
     const data = await AsyncStorage.getItem(PACKAGES_KEY);
     const allPackages: Package[] = data ? JSON.parse(data) : [];
-    
-  // If driverId provided, filter packages assigned to this driver
+
+    // If driverId provided, filter packages assigned to this driver
     if (driverId) {
       return allPackages.filter(pkg =>
         pkg.assigned_to === driverId && (includeArchived || !pkg.is_archived || pkg.status === 'Archived')
@@ -355,25 +367,25 @@ export const createPackage = async (packageData: Omit<Package, 'id'>): Promise<v
       _lastModified: new Date().toISOString(),
       _version: '1.0'
     };
-    
+
     // Save locally first (guaranteed to work)
     packages.push(newPackage);
     await AsyncStorage.setItem(PACKAGES_KEY, JSON.stringify(packages));
     console.log(`💾 Package ${newPackage.id} saved locally`);
-    
+
     // Try immediate sync of this specific package only
     try {
       // Use React Native Firebase v22 modular API
       const { getApp } = require('@react-native-firebase/app');
       const { getFirestore } = require('@react-native-firebase/firestore');
-      
+
       const app = getApp();
       const db = getFirestore(app);
-      
+
       const { doc, setDoc } = require('@react-native-firebase/firestore');
       await setDoc(doc(db, 'packages', newPackage.id), newPackage);
       console.log(`✅ Package ${newPackage.id} synced immediately`);
-      
+
       // Mark as synced in queue
       await addToSyncQueue({
         id: `sync_${Date.now()}`,
@@ -425,12 +437,12 @@ export const addToSyncQueue = async (operation: SyncOperation): Promise<void> =>
 export const markSyncItemAsSynced = async (operationId: string): Promise<void> => {
   try {
     const queue = await getSyncQueue();
-    const updatedQueue = queue.map(op => 
+    const updatedQueue = queue.map(op =>
       op.id === operationId ? { ...op, synced: true } : op
     );
     // Remove synced items older than 1 hour
     const oneHourAgo = new Date(Date.now() - 60 * 60 * 1000).toISOString();
-    const filteredQueue = updatedQueue.filter(op => 
+    const filteredQueue = updatedQueue.filter(op =>
       !op.synced || op.timestamp > oneHourAgo
     );
     await AsyncStorage.setItem(SYNC_QUEUE_KEY, JSON.stringify(filteredQueue));
@@ -505,7 +517,7 @@ export const updatePackage = async (packageId: string, updates: Partial<Package>
     // Update locally first
     const packages = await getPackagesLocally(undefined, true);
     const pkgIndex = packages.findIndex(p => p.id === packageId);
-    
+
     if (pkgIndex >= 0) {
       const updatedPackage = {
         ...packages[pkgIndex],
@@ -513,7 +525,7 @@ export const updatePackage = async (packageId: string, updates: Partial<Package>
         _lastModified: new Date().toISOString(),
         _version: String(parseFloat(packages[pkgIndex]._version || '1.0') + 0.1)
       };
-      
+
       packages[pkgIndex] = updatedPackage;
       await AsyncStorage.setItem(PACKAGES_KEY, JSON.stringify(packages));
       console.log(`💾 Package ${packageId} updated locally`);
@@ -535,7 +547,7 @@ export const getPackageStats = async (driverId?: string): Promise<{
 }> => {
   try {
     const packages = await getPackagesLocally(driverId);
-    
+
     return {
       total: packages.length,
       pending: packages.filter(p => p.status === 'Pending').length,
@@ -547,7 +559,7 @@ export const getPackageStats = async (driverId?: string): Promise<{
   } catch (error) {
     console.error('Error getting package stats:', error);
     return {
-      total: 0, pending: 0, assigned: 0, 
+      total: 0, pending: 0, assigned: 0,
       inTransit: 0, delivered: 0, returned: 0
     };
   }

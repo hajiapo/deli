@@ -5,6 +5,7 @@
  */
 
 import { useState, useEffect, useCallback } from 'react';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Package, Driver } from '../types';
 import {
   getPackagesLocally,
@@ -17,6 +18,7 @@ import {
   getLastSyncTime,
   getPackageStats,
   upsertPackageLocally,
+  deletePackageLocally,
   addToSyncQueue,
 } from '../utils/localDatabase';
 import { isPreStoredDriverId } from '../config/credentials';
@@ -51,6 +53,57 @@ export const useLocalDatabase = (options: UseLocalDatabaseOptions = {}) => {
     };
     init();
   }, []);
+
+  // Real-time listener for package changes (deletions, updates)
+  useEffect(() => {
+    try {
+      const { getApp } = require('@react-native-firebase/app');
+      const { getFirestore, collection, query, where, onSnapshot } = require('@react-native-firebase/firestore');
+      
+      const app = getApp();
+      const db = getFirestore(app);
+      
+      let unsubscribe: (() => void) | null = null;
+      let q: any;
+
+      if (isAdmin) {
+        // Admin listens to all packages
+        q = collection(db, 'packages');
+      } else if (driverId) {
+        // Driver listens only to their assigned packages
+        q = query(collection(db, 'packages'), where('assigned_to', '==', driverId));
+      } else {
+        return; // No valid driverId or isAdmin
+      }
+
+      unsubscribe = onSnapshot(q, async (snapshot: any) => {
+        try {
+          const firestorePackages: Package[] = [];
+          snapshot.forEach((doc: any) => {
+            const data = doc.data() as any;
+            firestorePackages.push({ id: doc.id, ...data });
+          });
+
+          // Update local state with Firestore data (includes deletions automatically)
+          setPackages(firestorePackages);
+          
+          // Sync to local storage
+          await AsyncStorage.setItem('@delivry:packages', JSON.stringify(firestorePackages));
+          console.log(`🔄 Real-time update: ${firestorePackages.length} packages synced (deletions included)`);
+        } catch (error) {
+          console.error('Error processing real-time update:', error);
+        }
+      }, (error: any) => {
+        console.error('Real-time listener error:', error);
+      });
+
+      return () => {
+        if (unsubscribe) unsubscribe();
+      };
+    } catch (error) {
+      console.error('Error setting up real-time listener:', error);
+    }
+  }, [driverId, isAdmin]);
 
   // Event-driven sync - no more periodic refreshes
   const [packageStats, setPackageStats] = useState<any>(null);
@@ -533,6 +586,62 @@ export const useLocalDatabase = (options: UseLocalDatabaseOptions = {}) => {
     }
   };
 
+  const deletePackages = async (packageIds: string[]) => {
+    try {
+      // Check if all packages are archived
+      const packagesToDelete = packages.filter(p => packageIds.includes(p.id));
+      const unarchivedPackages = packagesToDelete.filter(p => !p.is_archived && !p.archived_at);
+      
+      if (unarchivedPackages.length > 0) {
+        const names = unarchivedPackages.map(p => p.ref_number).join(', ');
+        throw new Error(`Les colis suivants ne sont pas archivés et ne peuvent pas être supprimés: ${names}. Veuillez d'abord les archiver.`);
+      }
+
+      // Delete locally first
+      for (const pkgId of packageIds) {
+        await deletePackageLocally(pkgId);
+        setPackages(prev => prev.filter(p => p.id !== pkgId));
+      }
+
+      // Try immediate Firestore deletion
+      try {
+        const { getApp } = require('@react-native-firebase/app');
+        const { getFirestore } = require('@react-native-firebase/firestore');
+        const app = getApp();
+        const db = getFirestore(app);
+
+        const { doc, writeBatch, deleteDoc } = require('@react-native-firebase/firestore');
+        const batch = writeBatch(db);
+
+        for (const pkgId of packageIds) {
+          const pkgRef = doc(db, 'packages', pkgId);
+          batch.delete(pkgRef);
+        }
+
+        await batch.commit();
+        console.log(`🗑️ Deleted ${packageIds.length} packages from Firestore`);
+      } catch (syncError) {
+        // Queue offline deletion
+        for (const pkgId of packageIds) {
+          await addToSyncQueue({
+            id: `delete_${Date.now()}_${pkgId}`,
+            type: 'delete',
+            collection: 'packages',
+            data: {
+              id: pkgId,
+            },
+            timestamp: new Date().toISOString(),
+            synced: false
+          });
+        }
+        console.log(`⚠️ Queued ${packageIds.length} packages for deletion`);
+      }
+    } catch (error) {
+      console.error('Error deleting packages:', error);
+      throw error;
+    }
+  };
+
   return {
     packages,
     drivers,
@@ -547,6 +656,7 @@ export const useLocalDatabase = (options: UseLocalDatabaseOptions = {}) => {
     assignPackageToDriver,
     archivePackages,
     unarchivePackages,
+    deletePackages,
     getFilteredPackages,
     packageStats,
   };

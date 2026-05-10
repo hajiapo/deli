@@ -782,11 +782,11 @@ const styles = StyleSheet.create({
   backBtn: { paddingVertical: responsiveSize(6, 8), paddingRight: SPACING.xs },
   backText: { color: '#3B82F6', fontSize: FONTS.compact.body, fontWeight: '600' },
   headerTitle: { fontSize: FONTS.compact.subtitle, fontWeight: '700', color: '#111827' },
-  listContent: { padding: SPACING.md, paddingBottom: responsiveSize(80, 100) },
+  listContent: { padding: SPACING.md, paddingBottom: responsiveSize(120, 140) },
   center: { flex: 1, justifyContent: 'center', alignItems: 'center', marginTop: responsiveSize(20, 30) },
   emptyText: { color: '#6B7280', fontSize: FONTS.compact.body },
   
-  card: { backgroundColor: '#FFFFFF', borderRadius: BORDER_RADIUS.responsive.card, padding: responsiveSize(10, 12), marginBottom: responsiveSize(8, 10), borderWidth: 1, borderColor: '#F3F4F6' },
+  card: { backgroundColor: '#FFFFFF', borderRadius: BORDER_RADIUS.responsive.card, padding: responsiveSize(12, 14), marginBottom: responsiveSize(10, 12), borderWidth: 1, borderColor: '#F3F4F6' },
   cardHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: responsiveSize(8, 10) },
   driverName: { fontSize: FONTS.compact.subtitle, fontWeight: '700', color: '#111827' },
   badge: { backgroundColor: '#E0E7FF', paddingHorizontal: responsiveSize(6, 8), paddingVertical: responsiveSize(2, 3), borderRadius: BORDER_RADIUS.md },
@@ -795,8 +795,8 @@ const styles = StyleSheet.create({
   infoLabel: { color: '#6B7280', fontSize: FONTS.compact.caption },
   infoValue: { color: '#111827', fontSize: FONTS.compact.caption, fontWeight: '600' },
   
-  footer: { padding: responsiveSize(12, 16), paddingBottom: responsiveSize(30, 40), backgroundColor: '#F9FAFB', borderTopWidth: 1, borderTopColor: '#E5E7EB' },
-  addBtn: { backgroundColor: '#10B981', paddingVertical: responsiveSize(8, 10), paddingHorizontal: responsiveSize(16, 20), borderRadius: BORDER_RADIUS.md, alignItems: 'center', alignSelf: 'center', marginBottom: responsiveSize(12, 16) },
+  footer: { padding: responsiveSize(16, 20), paddingBottom: responsiveSize(40, 50), backgroundColor: '#F9FAFB', borderTopWidth: 1, borderTopColor: '#E5E7EB' },
+  addBtn: { backgroundColor: '#10B981', paddingVertical: responsiveSize(14, 16), paddingHorizontal: responsiveSize(20, 24), borderRadius: BORDER_RADIUS.md, alignItems: 'center', alignSelf: 'center', marginBottom: responsiveSize(16, 20), minHeight: 48 },
   addBtnText: { color: '#FFFFFF', fontSize: FONTS.compact.body, fontWeight: '600' },
   
   // Firebase fallback styles
@@ -820,19 +820,22 @@ const styles = StyleSheet.create({
     fontWeight: '600',
   },
   
-  // Action buttons
+  // Action buttons - responsive layout
   actionButtons: { 
     flexDirection: 'row', 
     justifyContent: 'space-between', 
     marginTop: 12,
-    gap: 8
+    gap: 8,
+    flexWrap: 'wrap',
   },
   actionButton: {
     flex: 1,
-    paddingVertical: 8,
-    paddingHorizontal: 12,
-    borderRadius: 6,
+    minWidth: 100, // Ensure minimum width
+    paddingVertical: 10,
+    paddingHorizontal: 8,
+    borderRadius: 8,
     alignItems: 'center',
+    minHeight: 40,
   },
   modifyButton: {
     backgroundColor: '#3B82F6',
