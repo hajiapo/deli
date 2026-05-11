@@ -39,6 +39,8 @@ export default function DelivererTaskScreen({ navigation }: DelivererTaskScreenP
     connectionError,
     refresh,
     reloadLocalData,
+    updatePackageInState,
+    addPackageToState,
     updatePackageStatus 
   } = useLocalDatabase({ driverId: driverId || undefined, isAdmin: false });
 
@@ -436,7 +438,10 @@ export default function DelivererTaskScreen({ navigation }: DelivererTaskScreenP
         };
 
         upsertPackageLocally(updatedPkg);
-        reloadLocalData();
+        
+        // Update local state immediately for instant UI update
+        updatePackageInState(updatedPkg);
+        
         setExpandedPackageId(foundPkg.id);
         ToastAndroid.show('Colis mis à jour avec données QR', ToastAndroid.SHORT);
         return;
@@ -492,12 +497,13 @@ export default function DelivererTaskScreen({ navigation }: DelivererTaskScreenP
     };
 
     console.log('📦 Creating draft package:', draftPkg);
+    console.log('👤 Current driverId:', driverId);
 
     // Save draft locally so "Accepter Mission" can work (updatePackageStatus uses local pkgs)
     upsertPackageLocally(draftPkg);
 
-    // Refresh the local packages list to show the new draft immediately (without syncing)
-    reloadLocalData();
+    // Update local state immediately for instant UI update
+    addPackageToState(draftPkg);
 
     setExpandedPackageId(draftPkg.id);
     ToastAndroid.show('QR reconnu: mission créée localement', ToastAndroid.SHORT);

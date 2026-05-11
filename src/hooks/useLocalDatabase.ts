@@ -441,6 +441,22 @@ export const useLocalDatabase = (options: UseLocalDatabaseOptions = {}) => {
   }, [driverId, isAdmin]);
 
   /**
+   * Update a package in local state immediately (for instant UI updates)
+   */
+  const updatePackageInState = useCallback((updatedPkg: Package) => {
+    setPackages(prev => prev.map(pkg => 
+      pkg.id === updatedPkg.id ? updatedPkg : pkg
+    ));
+  }, []);
+
+  /**
+   * Add a new package to local state immediately
+   */
+  const addPackageToState = useCallback((newPkg: Package) => {
+    setPackages(prev => [...prev, newPkg]);
+  }, []);
+
+  /**
    * Process sync queue periodically (every 2 minutes) for failed operations
    */
   useEffect(() => {
@@ -661,6 +677,8 @@ export const useLocalDatabase = (options: UseLocalDatabaseOptions = {}) => {
     connectionError,
     refresh,
     reloadLocalData,
+    updatePackageInState,
+    addPackageToState,
     updatePackageStatus,
     assignPackageToDriver,
     archivePackages,
