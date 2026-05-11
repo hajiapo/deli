@@ -186,13 +186,33 @@ export const syncPackagesFromFirestore = async (driverId?: string, isAdmin = fal
       const firestoreMap = new Map<string, Package>();
       firestorePackages.forEach(pkg => firestoreMap.set(pkg.id, pkg));
 
-      // Merge: Keep Firestore packages, but preserve local packages that don't exist in Firestore
-      // This handles QR-created packages that haven't been synced yet
-      const mergedPackages: Package[] = [...firestorePackages];
+      // Merge: Keep Firestore packages, but preserve local packages with better data
+      const mergedPackages: Package[] = [];
 
+      for (const firestorePkg of firestorePackages) {
+        const localPkg = localPackages.find(p => p.id === firestorePkg.id);
+        if (localPkg) {
+          // Package exists in both - check which has better data
+          const localHasCustomerData = localPkg.customer_name && localPkg.customer_name !== 'Non spécifié' && localPkg.customer_name.trim() !== '';
+          const firestoreHasCustomerData = firestorePkg.customer_name && firestorePkg.customer_name.trim() !== '';
+          
+          if (localHasCustomerData && !firestoreHasCustomerData) {
+            // Local has customer data, Firestore doesn't - use local
+            console.log(`💾 Preserving local package with customer data: ${localPkg.id}`);
+            mergedPackages.push(localPkg);
+          } else {
+            // Use Firestore version (or local if no difference)
+            mergedPackages.push(firestorePkg);
+          }
+        } else {
+          // Only in Firestore
+          mergedPackages.push(firestorePkg);
+        }
+      }
+
+      // Add local packages not in Firestore
       for (const localPkg of localPackages) {
-        if (!firestoreMap.has(localPkg.id)) {
-          // Local package doesn't exist in Firestore, preserve it (e.g., QR-created)
+        if (!firestorePackages.some(p => p.id === localPkg.id)) {
           console.log(`💾 Preserving local package not in Firestore: ${localPkg.id}`);
           mergedPackages.push(localPkg);
         }
@@ -355,16 +375,24 @@ export const getPackagesLocally = async (driverId?: string, includeArchived: boo
     const data = await AsyncStorage.getItem(PACKAGES_KEY);
     const allPackages: Package[] = data ? JSON.parse(data) : [];
 
+    console.log(`📦 getPackagesLocally: driverId=${driverId}, includeArchived=${includeArchived}, totalPackages=${allPackages.length}`);
+
     // If driverId provided, filter packages assigned to this driver
     if (driverId) {
-      return allPackages.filter(pkg =>
+      const filtered = allPackages.filter(pkg =>
         pkg.assigned_to === driverId && (includeArchived || !pkg.is_archived || pkg.status === 'Archived')
       );
+      console.log(`🚚 Driver ${driverId} packages: ${filtered.length} (filtered from ${allPackages.length})`);
+      filtered.forEach(pkg => console.log(`  - ${pkg.id}: assigned_to=${pkg.assigned_to}, status=${pkg.status}`));
+      return filtered;
     }
 
     // Admin/normal retrieval: hide archived by default unless requested
-    return allPackages.filter(pkg => includeArchived || !pkg.is_archived);
-  } catch {
+    const filtered = allPackages.filter(pkg => includeArchived || !pkg.is_archived);
+    console.log(`👑 Admin packages: ${filtered.length} (filtered from ${allPackages.length})`);
+    return filtered;
+  } catch (error) {
+    console.error('Error in getPackagesLocally:', error);
     return [];
   }
 };
@@ -493,7 +521,25 @@ export const processSyncQueue = async (): Promise<void> => {
               ...operation.data.updates,
               _lastModified: new Date().toISOString()
             };
-            await updateDoc(doc(db, 'packages', operation.data.id), finalUpdates);
+            try {
+              await updateDoc(doc(db, 'packages', operation.data.id), finalUpdates);
+            } catch (updateError: any) {
+              // If document doesn't exist, create it
+              if (updateError.code === 'firestore/not-found' || updateError.message?.includes('not-found')) {
+                console.log(`📄 Document ${operation.data.id} not found, creating it`);
+                // Get the full package data from local storage
+                const localPackages = await getPackagesLocally(undefined, true);
+                const packageData = localPackages.find(p => p.id === operation.data.id);
+                if (packageData) {
+                  await setDoc(doc(db, 'packages', operation.data.id), {
+                    ...packageData,
+                    ...finalUpdates
+                  });
+                }
+              } else {
+                throw updateError;
+              }
+            }
           } else if (operation.type === 'delete' && operation.collection === 'packages') {
             await deleteDoc(doc(db, 'packages', operation.data.id));
           }
@@ -506,7 +552,25 @@ export const processSyncQueue = async (): Promise<void> => {
               ...operation.data.updates,
               _lastModified: new Date().toISOString()
             };
-            await db.collection('packages').doc(operation.data.id).update(finalUpdates);
+            try {
+              await db.collection('packages').doc(operation.data.id).update(finalUpdates);
+            } catch (updateError: any) {
+              // If document doesn't exist, create it
+              if (updateError.code === 'firestore/not-found' || updateError.message?.includes('not-found')) {
+                console.log(`📄 Document ${operation.data.id} not found, creating it`);
+                // Get the full package data from local storage
+                const localPackages = await getPackagesLocally(undefined, true);
+                const packageData = localPackages.find(p => p.id === operation.data.id);
+                if (packageData) {
+                  await db.collection('packages').doc(operation.data.id).set({
+                    ...packageData,
+                    ...finalUpdates
+                  });
+                }
+              } else {
+                throw updateError;
+              }
+            }
           } else if (operation.type === 'delete' && operation.collection === 'packages') {
             await db.collection('packages').doc(operation.data.id).delete();
           }

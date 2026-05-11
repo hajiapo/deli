@@ -502,8 +502,12 @@ export default function DelivererTaskScreen({ navigation }: DelivererTaskScreenP
     // Save draft locally so "Accepter Mission" can work (updatePackageStatus uses local pkgs)
     upsertPackageLocally(draftPkg);
 
+    console.log('💾 Draft package saved locally');
+
     // Update local state immediately for instant UI update
     addPackageToState(draftPkg);
+
+    console.log('📱 Package added to UI state, packages count:', localPackages.length + 1);
 
     setExpandedPackageId(draftPkg.id);
     ToastAndroid.show('QR reconnu: mission créée localement', ToastAndroid.SHORT);

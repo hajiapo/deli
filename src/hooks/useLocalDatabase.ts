@@ -84,12 +84,52 @@ export const useLocalDatabase = (options: UseLocalDatabaseOptions = {}) => {
             firestorePackages.push({ id: doc.id, ...data });
           });
 
-          // Update local state with Firestore data (includes deletions automatically)
-          setPackages(firestorePackages);
+          // Get existing local packages to preserve QR-created ones
+          const localRaw = await AsyncStorage.getItem('@delivry:packages');
+          const localPackages: Package[] = localRaw ? JSON.parse(localRaw) : [];
+
+          // Create a map of Firestore packages by ID
+          const firestoreMap = new Map<string, Package>();
+          firestorePackages.forEach(pkg => firestoreMap.set(pkg.id, pkg));
+
+          // Merge: Keep Firestore packages, but preserve local packages with better data
+          const mergedPackages: Package[] = [];
+
+          for (const firestorePkg of firestorePackages) {
+            const localPkg = localPackages.find(p => p.id === firestorePkg.id);
+            if (localPkg) {
+              // Package exists in both - check which has better data
+              const localHasCustomerData = localPkg.customer_name && localPkg.customer_name !== 'Non spécifié' && localPkg.customer_name.trim() !== '';
+              const firestoreHasCustomerData = firestorePkg.customer_name && firestorePkg.customer_name.trim() !== '';
+              
+              if (localHasCustomerData && !firestoreHasCustomerData) {
+                // Local has customer data, Firestore doesn't - use local
+                console.log(`💾 Preserving local package with customer data: ${localPkg.id}`);
+                mergedPackages.push(localPkg);
+              } else {
+                // Use Firestore version (or local if no difference)
+                mergedPackages.push(firestorePkg);
+              }
+            } else {
+              // Only in Firestore
+              mergedPackages.push(firestorePkg);
+            }
+          }
+
+          // Add local packages not in Firestore
+          for (const localPkg of localPackages) {
+            if (!firestorePackages.some(p => p.id === localPkg.id)) {
+              console.log(`💾 Real-time: Preserving local package not in Firestore: ${localPkg.id}`);
+              mergedPackages.push(localPkg);
+            }
+          }
+
+          // Update local state with merged data
+          setPackages(mergedPackages);
           
-          // Sync to local storage
-          await AsyncStorage.setItem('@delivry:packages', JSON.stringify(firestorePackages));
-          console.log(`🔄 Real-time update: ${firestorePackages.length} packages synced (deletions included)`);
+          // Sync merged data to local storage
+          await AsyncStorage.setItem('@delivry:packages', JSON.stringify(mergedPackages));
+          console.log(`🔄 Real-time update: ${firestorePackages.length} from Firestore, preserved ${mergedPackages.length - firestorePackages.length} local packages`);
         } catch (error) {
           console.error('Error processing real-time update:', error);
         }
