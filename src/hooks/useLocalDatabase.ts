@@ -433,6 +433,14 @@ export const useLocalDatabase = (options: UseLocalDatabaseOptions = {}) => {
   }, [driverId, isAdmin]);
 
   /**
+   * Reload local data without syncing with Firestore
+   */
+  const reloadLocalData = useCallback(async () => {
+    console.log('🔄 Reloading local data only');
+    await loadLocalData();
+  }, [driverId, isAdmin]);
+
+  /**
    * Process sync queue periodically (every 2 minutes) for failed operations
    */
   useEffect(() => {
@@ -652,6 +660,7 @@ export const useLocalDatabase = (options: UseLocalDatabaseOptions = {}) => {
     isOnline,
     connectionError,
     refresh,
+    reloadLocalData,
     updatePackageStatus,
     assignPackageToDriver,
     archivePackages,

@@ -4,18 +4,23 @@ import QRCode from 'react-native-qrcode-svg';
 import { generateQRString, extractQRData } from '../utils/qrGenerator';
 
 interface QRCodeComponentProps {
-  data: any; // Full package data
+  /** Full package data (optional if `value` is provided) */
+  data?: any;
+  /** Raw QR payload (optional). If present, we use it directly. */
+  value?: string;
   size?: number;
   getRef?: (ref: any) => void;
 }
 
 /**
  * QRCodeComponent
- * Displays a QR code for package data
- * Usage: <QRCodeComponent data={packageData} size={300} />
+ * Displays a QR code.
+ * - If `value` is provided: uses it directly as the QR payload.
+ * - Else: generates payload from `data` using extractQRData/generateQRString.
  */
 export const QRCodeComponent: React.FC<QRCodeComponentProps> = ({
   data,
+  value,
   size = 300,
   getRef,
 }) => {
@@ -27,8 +32,8 @@ export const QRCodeComponent: React.FC<QRCodeComponentProps> = ({
     }
   }, [getRef]);
 
-  const qrData = extractQRData(data);
-  const qrString = generateQRString(qrData);
+  const qrString =
+    typeof value === 'string' ? value : generateQRString(extractQRData(data));
 
   return (
     <View style={styles.container}>

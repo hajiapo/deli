@@ -165,8 +165,8 @@ Notes     : ${pkg.description || 'Aucune'}
           keyExtractor={(item) => item.id}
           contentContainerStyle={styles.listContent}
           renderItem={({ item }) => (
-            <TouchableOpacity 
-              style={styles.packageRow} 
+            <TouchableOpacity
+              style={styles.packageRow}
               onPress={() => {
                 setSelectedPkg(item);
                 setModalInstanceKey(k => k + 1);
@@ -187,14 +187,14 @@ Notes     : ${pkg.description || 'Aucune'}
       )}
 
       {/* Printable Text Modal */}
-      <Modal 
-        key={modalInstanceKey} 
-        visible={modalVisible} 
-        transparent 
+      <Modal
+        key={modalInstanceKey}
+        visible={modalVisible}
+        transparent
         animationType="slide"
         statusBarTranslucent={true}
       >
-        <View style={styles.modalOverlay}>
+        <SafeAreaView style={styles.modalOverlay} edges={['top', 'bottom']}>
           <View style={[styles.modalContent, { height: '85%' }]}>
             <View style={styles.modalHeader}>
               <Text style={styles.modalTitle}>Détails à imprimer</Text>
@@ -250,16 +250,16 @@ Notes     : ${pkg.description || 'Aucune'}
                 </TouchableOpacity>
               </View>
             </View>
-            
+
             <ScrollView
               style={styles.printableContainer}
               contentContainerStyle={styles.printableScrollContent}
               nestedScrollEnabled={true}
             >
               {selectedPkg && (
-              <>
-                <Text selectable={true} style={styles.printableText}>
-                  {`----------------------------------
+                <>
+                  <Text selectable={true} style={styles.printableText}>
+                    {`----------------------------------
 DÉTAILS DU COLIS
 ----------------------------------
 RÉFÉRENCE : ${selectedPkg.ref_number}
@@ -289,26 +289,24 @@ Statut    : ${statusLabels[selectedPkg.status] || selectedPkg.status}
 Date lim. : ${selectedPkg.limit_date || 'N/A'}
 Notes     : ${selectedPkg.description || 'Aucune'}
 ----------------------------------`}
-                </Text>
-                {/* 
-                   FIX: Added fixed height to qrContainer. 
-                   This reserves space for the QR code before it renders, 
-                   preventing the "cut off" scroll issue.
-                */}
-                <View style={styles.qrContainer}>
-                  <QRCodeComponent
-                    data={selectedPkg}
-                    size={200}
-                    getRef={(ref: any) => {
-                      qrRef.current = ref;
-                    }}
-                  />
-                </View>
-              </>
+                  </Text>
+
+                  {/* QR right after the end text so it doesn't float at the bottom */}
+                  <View style={styles.qrContainer}>
+                    <QRCodeComponent
+                      key={modalInstanceKey}
+                      data={selectedPkg}
+                      size={200}
+                      getRef={(ref: any) => {
+                        qrRef.current = ref;
+                      }}
+                    />
+                  </View>
+                </>
               )}
             </ScrollView>
           </View>
-        </View>
+        </SafeAreaView>
       </Modal>
     </SafeAreaView>
   );
@@ -452,8 +450,9 @@ const styles = StyleSheet.create({
     backgroundColor: '#FFFFFF',
     borderRadius: 12,
     width: '100%',
-    maxHeight: '90%', 
-    overflow: 'hidden', 
+    maxHeight: '100%',
+    // Important: do not clip content, otherwise QR at the bottom can get cut off on some devices
+    overflow: 'visible',
     flexDirection: 'column',
   },
   modalHeader: {
@@ -490,10 +489,9 @@ const styles = StyleSheet.create({
   },
   printableScrollContent: {
     padding: 20,
-    // FIX: Increased paddingBottom significantly to ensure the user can scroll 
-    // the QR code completely into the visible area, past the bottom edge.
-    paddingBottom: 150, 
-    alignItems: 'center', 
+    paddingBottom: 12,
+    alignItems: 'stretch',
+    flexGrow: 1,
   },
   printableText: {
     fontFamily: Platform.OS === 'ios' ? 'Courier' : 'monospace',
@@ -501,17 +499,14 @@ const styles = StyleSheet.create({
     color: '#000000',
     lineHeight: 20,
     width: '100%',
-    marginBottom: 20,
+    marginBottom: 0,
   },
   qrContainer: {
     alignItems: 'center',
     justifyContent: 'center',
-    padding: 10,
+    padding: 0,
     backgroundColor: '#FFFFFF',
-    marginBottom: 20,
-    // FIX: Fixed height. This forces the layout engine to reserve space 
-    // for the QR code before it finishes rendering.
-    height: 250, 
+    marginBottom: 0,
     width: '100%',
   },
   qrLabel: {

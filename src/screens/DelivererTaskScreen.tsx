@@ -5,7 +5,7 @@ import PackageCard from '../components/PackageCard';
 import useAuthStore from '../store/useAuthStore';
 import { DelivererTaskScreenProps } from '../types/navigation';
 import { useLocalDatabase } from '../hooks/useLocalDatabase';
-import { updatePackage } from '../utils/localDatabase';
+import { updatePackage, upsertPackageLocally } from '../utils/localDatabase';
 import { showExportOptions } from '../utils/offlineExport';
 import { sendAutoReportToAdmin } from '../utils/offlineExport';
 import { getStatusColor } from '../utils/statusColors';
@@ -38,6 +38,7 @@ export default function DelivererTaskScreen({ navigation }: DelivererTaskScreenP
     isOnline,
     connectionError,
     refresh,
+    reloadLocalData,
     updatePackageStatus 
   } = useLocalDatabase({ driverId: driverId || undefined, isAdmin: false });
 
@@ -62,7 +63,17 @@ export default function DelivererTaskScreen({ navigation }: DelivererTaskScreenP
   useEffect(() => {
     console.log('📱 Driver ID:', driverId);
     console.log('📦 Packages loaded:', localPackages.length);
-    console.log('📋 Package details:', localPackages.map(p => ({ id: p.id, ref: p.ref_number, assigned_to: p.assigned_to, status: p.status })));
+    console.log('📋 Package details:', localPackages.map(p => ({ 
+      id: p.id, 
+      ref: p.ref_number, 
+      status: p.status,
+      assigned_to: p.assigned_to,
+      customer_name: p.customer_name,
+      customer_address: p.customer_address,
+      customer_phone: p.customer_phone,
+      price: p.price,
+      description: p.description
+    })));
   }, [driverId, localPackages]);
 
   // Sort packages by status
@@ -292,60 +303,208 @@ export default function DelivererTaskScreen({ navigation }: DelivererTaskScreenP
 
   const handleScan = (data: string) => {
     setScannerVisible(false);
-    
+
+    console.log('📱 QR Scanned - Raw data length:', data.length);
+    console.log('📱 QR Scanned - First 200 chars:', data.substring(0, 200));
+    console.log('📱 QR Scanned - Last 200 chars:', data.substring(Math.max(0, data.length - 200)));
+
     // Validate QR code data - reject URLs and invalid formats
     if (!data || data.trim().length === 0) {
       Alert.alert('Format invalide', 'Le QR code scanné est vide.');
       return;
     }
-    
+
     // Reject URLs and web links
     if (data.startsWith('http://') || data.startsWith('https://') || data.startsWith('www.')) {
       Alert.alert('Format invalide', 'Les liens web ne sont pas supportés.');
       return;
     }
-    
+
     let searchRef = data.trim();
-    
-    // Try to parse as JSON (in case QR is a full package JSON)
+    let parsedPayload: any | null = null;
+
+    // First try to parse entire data as JSON (in case QR contains only JSON)
     try {
       const parsed = JSON.parse(data);
-      if (parsed.ref_number) {
-        searchRef = String(parsed.ref_number);
-      } else if (parsed.ref) {
-        searchRef = String(parsed.ref);
-      } else {
-        Alert.alert('Format invalide', 'Le QR code scanné n\'est pas un colis valide.');
-        return;
-      }
+      parsedPayload = parsed;
+      console.log('✅ Parsed entire QR as JSON:', parsedPayload);
     } catch (e) {
+      // Not pure JSON, try to extract from formatted text
+      console.log('Not pure JSON, trying to extract from text...');
+    }
+
+    // If not parsed yet, try to extract JSON from QR data (handles formatted text + JSON)
+    if (!parsedPayload) {
+      // Method 1: Look for QR_DATA marker
+      const qrDataMarker = 'QR_DATA (à régénérer) :';
+      const markerIndex = data.indexOf(qrDataMarker);
+      
+      if (markerIndex !== -1) {
+        const jsonPart = data.substring(markerIndex + qrDataMarker.length).trim();
+        console.log('🔍 Found QR_DATA marker, JSON part:', jsonPart.substring(0, 100) + '...');
+        
+        try {
+          parsedPayload = JSON.parse(jsonPart);
+          console.log('✅ Parsed from QR_DATA marker:', parsedPayload);
+        } catch (e) {
+          console.warn('❌ Failed to parse from marker:', e);
+        }
+      }
+      
+      // Method 2: If still not parsed, try finding JSON braces
+      if (!parsedPayload) {
+        const startBrace = data.indexOf('{');
+        const lastBrace = data.lastIndexOf('}');
+        
+        if (startBrace !== -1 && lastBrace !== -1 && lastBrace > startBrace) {
+          const jsonCandidate = data.substring(startBrace, lastBrace + 1);
+          console.log('🔍 Fallback: JSON candidate:', jsonCandidate.substring(0, 100) + '...');
+          
+          try {
+            parsedPayload = JSON.parse(jsonCandidate);
+            console.log('✅ Parsed from braces fallback:', parsedPayload);
+          } catch (e) {
+            console.warn('❌ Failed braces fallback:', e);
+          }
+        }
+      }
+      
+      if (!parsedPayload) {
+        console.log('❌ All parsing methods failed');
+      }
+    }
+
+    // Fallback: Try to parse entire data as JSON (in case QR is pure JSON)
+    if (!parsedPayload) {
+      try {
+        const parsed = JSON.parse(data);
+        parsedPayload = parsed;
+      } catch (e) {
+        // Not JSON - continue with text parsing
+      }
+    }
+
+    // Extract reference number
+    if (parsedPayload?.ref_number) {
+      searchRef = String(parsedPayload.ref_number);
+    } else if (parsedPayload?.ref) {
+      searchRef = String(parsedPayload.ref);
+    } else {
       // Not JSON - check if it's formatted text with RÉFÉRENCE line
       const refMatch = searchRef.match(/RÉFÉRENCE\s*:\s*(PKG-\d+|\d+)/i);
       if (refMatch) {
         searchRef = refMatch[1];
       }
-      
+
       // Validate reference number format (basic validation)
       if (!/^PKG-\d+$/.test(searchRef) && !/^\d+$/.test(searchRef)) {
         Alert.alert('Format invalide', 'Le QR code doit contenir un numéro de référence valide (ex: PKG-123456).');
         return;
       }
     }
-    
-    // Find package by ID or Ref Number
+
+    // Find package by ID or Ref Number (local only)
     const foundPkg = packages.find(
-      p => p.id === searchRef || p.ref_number.toLowerCase() === searchRef.toLowerCase()
+      p => p.id === searchRef || p.ref_number?.toLowerCase() === searchRef.toLowerCase()
     );
 
     if (foundPkg) {
+      // If we have QR payload data, update the existing package with QR data
+      if (parsedPayload) {
+        console.log('🔄 Updating existing package with QR data');
+        
+        const updatedPkg = {
+          ...foundPkg,
+          // Update with QR data
+          customer_name: parsedPayload.customer_name || foundPkg.customer_name,
+          customer_address: parsedPayload.customer_address || foundPkg.customer_address,
+          customer_phone: parsedPayload.customer_phone || foundPkg.customer_phone,
+          customer_phone_2: parsedPayload.customer_phone_2 || foundPkg.customer_phone_2,
+          gps_lat: parsedPayload.gps_lat ?? foundPkg.gps_lat,
+          gps_lng: parsedPayload.gps_lng ?? foundPkg.gps_lng,
+          sender_name: parsedPayload.sender_name || foundPkg.sender_name,
+          sender_company: parsedPayload.sender_company || foundPkg.sender_company,
+          sender_phone: parsedPayload.sender_phone || foundPkg.sender_phone,
+          description: parsedPayload.description || foundPkg.description,
+          weight: parsedPayload.weight || foundPkg.weight,
+          supplement_info: parsedPayload.supplement_info || foundPkg.supplement_info,
+          date_of_arrive: parsedPayload.date_of_arrive || foundPkg.date_of_arrive,
+          limit_date: parsedPayload.limit_date ?? foundPkg.limit_date,
+          price: parsedPayload.price ?? foundPkg.price,
+          is_paid: parsedPayload.is_paid ?? foundPkg.is_paid,
+          _lastModified: new Date().toISOString(),
+        };
+
+        upsertPackageLocally(updatedPkg);
+        reloadLocalData();
+        setExpandedPackageId(foundPkg.id);
+        ToastAndroid.show('Colis mis à jour avec données QR', ToastAndroid.SHORT);
+        return;
+      }
+
+      // No QR payload or package exists and has valid data, just show it
       setExpandedPackageId(foundPkg.id);
       ToastAndroid.show('Colis trouvé', ToastAndroid.SHORT);
-    } else {
-      Alert.alert(
-        'Colis introuvable',
-        'Ce colis ne fait pas partie de vos missions ou n\'existe pas.'
-      );
+      return;
     }
+
+    // Offline fallback (Firestore down / package not yet assigned locally):
+    // Create a local draft from QR payload so driver can prefill + accept.
+    if (!driverId) {
+      Alert.alert('Erreur', 'Driver ID manquant.');
+      return;
+    }
+
+    const draftPkg: any = {
+      // Make id == ref_number so UI/accept/update uses consistent id
+      id: searchRef,
+      ref_number: searchRef,
+
+      status: 'Assigned',
+      assigned_to: driverId,
+
+      // Timestamps
+      accepted_at: new Date().toISOString(),
+      assigned_at: new Date().toISOString(),
+      _lastModified: new Date().toISOString(),
+      _version: '1.0',
+
+      // Prefill customer info (optional fields)
+      customer_name: parsedPayload?.customer_name ?? 'Non spécifié',
+      customer_address: parsedPayload?.customer_address ?? '',
+      customer_phone: parsedPayload?.customer_phone ?? '',
+      customer_phone_2: parsedPayload?.customer_phone_2 ?? '',
+      gps_lat: parsedPayload?.gps_lat ?? undefined,
+      gps_lng: parsedPayload?.gps_lng ?? undefined,
+
+      // Prefill some extra fields used by UI
+      sender_name: parsedPayload?.sender_name ?? '',
+      sender_company: parsedPayload?.sender_company ?? '',
+      sender_phone: parsedPayload?.sender_phone ?? '',
+      description: parsedPayload?.description ?? '',
+      weight: parsedPayload?.weight ?? '',
+      supplement_info: parsedPayload?.supplement_info ?? '',
+      date_of_arrive: parsedPayload?.date_of_arrive ?? parsedPayload?.created_at ?? new Date().toISOString(),
+      limit_date: parsedPayload?.limit_date ?? undefined,
+
+      price: parsedPayload?.price ?? 0,
+      is_paid: !!parsedPayload?.is_paid,
+    };
+
+    console.log('📦 Creating draft package:', draftPkg);
+
+    // Save draft locally so "Accepter Mission" can work (updatePackageStatus uses local pkgs)
+    upsertPackageLocally(draftPkg);
+
+    // Refresh the local packages list to show the new draft immediately (without syncing)
+    reloadLocalData();
+
+    setExpandedPackageId(draftPkg.id);
+    ToastAndroid.show('QR reconnu: mission créée localement', ToastAndroid.SHORT);
+    Alert.alert(
+      'Mission prête',
+      'Le QR a été reconnu. Vous pouvez accepter la mission (pré-remplie).'
+    );
   };
 
   const handleExport = () => {

@@ -106,35 +106,27 @@ export const syncPackagesFromFirestore = async (driverId?: string, isAdmin = fal
             firestorePackages.push({ id: doc.id, ...data });
           });
 
-          // Merge local archived overrides back onto Firestore-synced packages
-          // so that "archive" does not get reverted by stale Firestore reads.
+          // Get existing local packages to preserve QR-created ones
           const localRaw = await AsyncStorage.getItem(PACKAGES_KEY);
-          const localAllPackages: Package[] = localRaw ? JSON.parse(localRaw) : [];
+          const localPackages: Package[] = localRaw ? JSON.parse(localRaw) : [];
 
-          const localArchivedById = new Map<string, { is_archived: boolean; archived_at?: string }>();
-          for (const p of localAllPackages) {
-            const isArchived = !!(p.is_archived || p.archived_at);
-            if (isArchived) {
-              localArchivedById.set(p.id, {
-                is_archived: true,
-                archived_at: p.archived_at,
-              });
+          // Create a map of Firestore packages by ID
+          const firestoreMap = new Map<string, Package>();
+          firestorePackages.forEach(pkg => firestoreMap.set(pkg.id, pkg));
+
+          // Merge: Keep Firestore packages, but preserve local packages that don't exist in Firestore
+          const mergedPackages: Package[] = [...firestorePackages];
+
+          for (const localPkg of localPackages) {
+            if (!firestoreMap.has(localPkg.id)) {
+              // Local package doesn't exist in Firestore, preserve it
+              console.log(`💾 Preserving local admin package not in Firestore: ${localPkg.id}`);
+              mergedPackages.push(localPkg);
             }
           }
 
-          const mergedPackages = firestorePackages.map(p => {
-            const localOverride = localArchivedById.get(p.id);
-            if (!localOverride) return p;
-
-            return {
-              ...p,
-              is_archived: true,
-              archived_at: localOverride.archived_at ?? p.archived_at,
-            };
-          });
-
           await AsyncStorage.setItem(PACKAGES_KEY, JSON.stringify(mergedPackages));
-          console.log(`📥 Admin synced ${mergedPackages.length} packages from Firestore (with local archive merge)`);
+          console.log(`📥 Admin synced ${firestorePackages.length} packages from Firestore, preserved ${mergedPackages.length - firestorePackages.length} local packages`);
           return;
         } catch (adminSyncError) {
           console.log('⚠️ Admin direct sync failed, trying with auth:', adminSyncError);
@@ -179,15 +171,35 @@ export const syncPackagesFromFirestore = async (driverId?: string, isAdmin = fal
       }
 
       const snapshot = await getDocs(queryRef);
-      const packages: Package[] = [];
+      const firestorePackages: Package[] = [];
 
       snapshot.forEach((doc: any) => {
         const data = doc.data() as any;
-        packages.push({ id: doc.id, ...data });
+        firestorePackages.push({ id: doc.id, ...data });
       });
 
-      await AsyncStorage.setItem(PACKAGES_KEY, JSON.stringify(packages));
-      console.log(`📥 Synced ${packages.length} packages from Firestore`);
+      // Get existing local packages to preserve QR-created ones
+      const localRaw = await AsyncStorage.getItem(PACKAGES_KEY);
+      const localPackages: Package[] = localRaw ? JSON.parse(localRaw) : [];
+
+      // Create a map of Firestore packages by ID
+      const firestoreMap = new Map<string, Package>();
+      firestorePackages.forEach(pkg => firestoreMap.set(pkg.id, pkg));
+
+      // Merge: Keep Firestore packages, but preserve local packages that don't exist in Firestore
+      // This handles QR-created packages that haven't been synced yet
+      const mergedPackages: Package[] = [...firestorePackages];
+
+      for (const localPkg of localPackages) {
+        if (!firestoreMap.has(localPkg.id)) {
+          // Local package doesn't exist in Firestore, preserve it (e.g., QR-created)
+          console.log(`💾 Preserving local package not in Firestore: ${localPkg.id}`);
+          mergedPackages.push(localPkg);
+        }
+      }
+
+      await AsyncStorage.setItem(PACKAGES_KEY, JSON.stringify(mergedPackages));
+      console.log(`📥 Synced ${firestorePackages.length} packages from Firestore, preserved ${mergedPackages.length - firestorePackages.length} local packages`);
     } catch (firebaseError) {
       console.error('Firebase initialization error in sync:', firebaseError);
       console.log('🔒 Firebase not available - working in offline mode');
