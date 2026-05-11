@@ -35,7 +35,6 @@ export default function PackageListScreen({ navigation }: PackageListScreenProps
 
   const handleAssignPackage = useCallback(async (packageId: string) => {
     try {
-      // Navigate to driver selection screen or show driver picker
       navigation.navigate('DriverList', { 
         mode: 'assign', 
         packageId,
@@ -49,10 +48,6 @@ export default function PackageListScreen({ navigation }: PackageListScreenProps
       setError(err?.message || 'Erreur lors de l\'assignation du colis');
     }
   }, [navigation, assignPackageToDriver]);
-
-  // Note: unassign is not implemented in useLocalDatabase currently.
-  // Keeping the handler removed to avoid type/runtime issues.
-
 
   const filteredPackages = filterStatus === 'all' 
     ? packages
@@ -192,9 +187,15 @@ Notes     : ${pkg.description || 'Aucune'}
       )}
 
       {/* Printable Text Modal */}
-      <Modal key={modalInstanceKey} visible={modalVisible} transparent animationType="slide">
+      <Modal 
+        key={modalInstanceKey} 
+        visible={modalVisible} 
+        transparent 
+        animationType="slide"
+        statusBarTranslucent={true}
+      >
         <View style={styles.modalOverlay}>
-          <View style={styles.modalContent}>
+          <View style={[styles.modalContent, { height: '85%' }]}>
             <View style={styles.modalHeader}>
               <Text style={styles.modalTitle}>Détails à imprimer</Text>
               <View style={styles.headerButtons}>
@@ -208,7 +209,6 @@ Notes     : ${pkg.description || 'Aucune'}
 
                     const qr = qrRef.current;
 
-                    // Prefer exporting an actual scannable QR image
                     try {
                       if (qr?.toDataURL) {
                         const dataUrl: string | undefined = await qr.toDataURL();
@@ -226,7 +226,6 @@ Notes     : ${pkg.description || 'Aucune'}
                       console.log('QR image export failed, falling back to text share:', e);
                     }
 
-                    // Fallback: share text including QR payload (non-image)
                     const fallbackMessage =
                       `${receiptText}\n\n` +
                       `QR_DATA (à régénérer) :\n${qrString}`;
@@ -252,16 +251,15 @@ Notes     : ${pkg.description || 'Aucune'}
               </View>
             </View>
             
-            <View style={{ flex: 1 }}>
-              <ScrollView
-                style={styles.printableContainer}
-                contentContainerStyle={{ flexGrow: 1, paddingBottom: 220 }}
-                nestedScrollEnabled={true}
-              >
-                {selectedPkg && (
-                <>
-                  <Text selectable={true} style={styles.printableText}>
-                    {`----------------------------------
+            <ScrollView
+              style={styles.printableContainer}
+              contentContainerStyle={styles.printableScrollContent}
+              nestedScrollEnabled={true}
+            >
+              {selectedPkg && (
+              <>
+                <Text selectable={true} style={styles.printableText}>
+                  {`----------------------------------
 DÉTAILS DU COLIS
 ----------------------------------
 RÉFÉRENCE : ${selectedPkg.ref_number}
@@ -291,20 +289,24 @@ Statut    : ${statusLabels[selectedPkg.status] || selectedPkg.status}
 Date lim. : ${selectedPkg.limit_date || 'N/A'}
 Notes     : ${selectedPkg.description || 'Aucune'}
 ----------------------------------`}
-                  </Text>
-                  <View style={styles.qrContainer}>
-                    <QRCodeComponent
-                      data={selectedPkg}
-                      size={250}
-                      getRef={(ref: any) => {
-                        qrRef.current = ref;
-                      }}
-                    />
-                  </View>
-                </>
-                )}
-              </ScrollView>
-            </View>
+                </Text>
+                {/* 
+                   FIX: Added fixed height to qrContainer. 
+                   This reserves space for the QR code before it renders, 
+                   preventing the "cut off" scroll issue.
+                */}
+                <View style={styles.qrContainer}>
+                  <QRCodeComponent
+                    data={selectedPkg}
+                    size={200}
+                    getRef={(ref: any) => {
+                      qrRef.current = ref;
+                    }}
+                  />
+                </View>
+              </>
+              )}
+            </ScrollView>
           </View>
         </View>
       </Modal>
@@ -443,14 +445,15 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: 'rgba(0,0,0,0.5)',
     justifyContent: 'center',
-    alignItems: 'stretch',
+    alignItems: 'center',
     padding: 16,
   },
   modalContent: {
     backgroundColor: '#FFFFFF',
     borderRadius: 12,
     width: '100%',
-    overflow: 'visible',
+    maxHeight: '90%', 
+    overflow: 'hidden', 
     flexDirection: 'column',
   },
   modalHeader: {
@@ -482,23 +485,34 @@ const styles = StyleSheet.create({
     fontSize: 14,
   },
   printableContainer: {
-    flex: 1,
-    padding: 20,
+    flex: 1, 
     backgroundColor: '#FFFFFF',
+  },
+  printableScrollContent: {
+    padding: 20,
+    // FIX: Increased paddingBottom significantly to ensure the user can scroll 
+    // the QR code completely into the visible area, past the bottom edge.
+    paddingBottom: 150, 
+    alignItems: 'center', 
   },
   printableText: {
     fontFamily: Platform.OS === 'ios' ? 'Courier' : 'monospace',
     fontSize: 14,
     color: '#000000',
     lineHeight: 20,
+    width: '100%',
+    marginBottom: 20,
   },
   qrContainer: {
     alignItems: 'center',
     justifyContent: 'center',
-    marginTop: 12,
-    marginBottom: 4,
     padding: 10,
     backgroundColor: '#FFFFFF',
+    marginBottom: 20,
+    // FIX: Fixed height. This forces the layout engine to reserve space 
+    // for the QR code before it finishes rendering.
+    height: 250, 
+    width: '100%',
   },
   qrLabel: {
     fontSize: 14,
