@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { View, Text, StyleSheet, FlatList, ActivityIndicator, TouchableOpacity, Alert, Modal, TextInput, ToastAndroid, Linking, Platform } from 'react-native';
+import { View, Text, StyleSheet, FlatList, ActivityIndicator, TouchableOpacity, Alert, Modal, TextInput, ToastAndroid, Linking, Platform, ScrollView } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import PackageCard from '../components/PackageCard';
 import useAuthStore from '../store/useAuthStore';
@@ -126,74 +126,90 @@ export default function DelivererTaskScreen({ navigation }: DelivererTaskScreenP
   };
 
   // Phone call functionality
-  const makePhoneCall = (phoneNumber: string) => {
+  const makePhoneCall = async (phoneNumber: string) => {
     if (!phoneNumber) return;
-    
-    const phoneUrl = `tel:${phoneNumber}`;
-    Linking.canOpenURL(phoneUrl)
-      .then((supported) => {
-        if (supported) {
-          Linking.openURL(phoneUrl);
-        } else {
-          Alert.alert("Erreur", "Impossible d'ouvrir l'application téléphone");
-        }
-      })
-      .catch((error) => {
-        console.error('Phone call error:', error);
-        Alert.alert("Erreur", "Impossible d'effectuer l'appel");
-      });
+
+    // Keep only digits for tel:
+    const digits = phoneNumber.replace(/[^0-9]/g, '');
+    if (!digits) {
+      Alert.alert('Erreur', "Numéro de téléphone invalide");
+      return;
+    }
+
+    const phoneUrl = `tel:${digits}`;
+    try {
+      console.log('📞 tel URL:', phoneUrl);
+      await Linking.openURL(phoneUrl);
+    } catch (error) {
+      console.error('Phone call error:', error);
+      Alert.alert("Erreur", "Impossible d'effectuer l'appel");
+    }
   };
 
   // WhatsApp functionality
-  const openWhatsApp = (phoneNumber: string) => {
+  const openWhatsApp = async (phoneNumber: string) => {
     if (!phoneNumber) return;
-    
-    // Remove all non-numeric characters for WhatsApp
-    const cleanPhone = phoneNumber.replace(/[^0-9]/g, '');
-    const whatsappUrl = `https://wa.me/${cleanPhone}`;
-    
-    Linking.canOpenURL(whatsappUrl)
-      .then((supported) => {
-        if (supported) {
-          Linking.openURL(whatsappUrl);
-        } else {
-          Alert.alert("Erreur", "WhatsApp n'est pas installé");
-        }
-      })
-      .catch((error) => {
-        console.error('WhatsApp error:', error);
+
+    const cleanPhoneDigits = phoneNumber.replace(/[^0-9]/g, '');
+    if (!cleanPhoneDigits) {
+      Alert.alert("Erreur", "Numéro WhatsApp invalide");
+      return;
+    }
+
+    const formattedPhone = phoneNumber.startsWith('0')
+      ? `33${phoneNumber.substring(1).replace(/[^0-9]/g, '')}`
+      : cleanPhoneDigits;
+
+    const whatsappDeepLink = `whatsapp://send?phone=${formattedPhone}`;
+    const whatsappWebFallback = `https://wa.me/${cleanPhoneDigits}`;
+
+    try {
+      console.log('💬 WhatsApp deep link:', whatsappDeepLink);
+      await Linking.openURL(whatsappDeepLink);
+    } catch (error) {
+      console.error('WhatsApp deep link failed:', error);
+      try {
+        console.log('💬 WhatsApp web fallback:', whatsappWebFallback);
+        await Linking.openURL(whatsappWebFallback);
+      } catch (error2) {
+        console.error('WhatsApp fallback failed:', error2);
         Alert.alert("Erreur", "Impossible d'ouvrir WhatsApp");
-      });
+      }
+    }
   };
 
   // GPS/Maps functionality
-  const openMaps = (address: string, lat?: number, lng?: number) => {
-    let mapsUrl: string;
-    
-    if (lat && lng) {
-      // Use coordinates if available
-      mapsUrl = `https://www.google.com/maps/search/?api=1&query=${lat},${lng}`;
-    } else if (address) {
-      // Use address if no coordinates
-      const encodedAddress = encodeURIComponent(address);
-      mapsUrl = `https://www.google.com/maps/search/?api=1&query=${encodedAddress}`;
-    } else {
-      Alert.alert("Erreur", "Aucune adresse disponible");
-      return;
-    }
-    
-    Linking.canOpenURL(mapsUrl)
-      .then((supported) => {
-        if (supported) {
-          Linking.openURL(mapsUrl);
-        } else {
-          Alert.alert("Erreur", "Impossible d'ouvrir l'application cartes");
+  const openMaps = async (address: string, lat?: number, lng?: number) => {
+    try {
+      if (lat != null && lng != null && !Number.isNaN(lat) && !Number.isNaN(lng)) {
+        const geoUrl = `geo:${lat},${lng}?q=${lat},${lng}`;
+        const httpsUrl = `https://www.google.com/maps/search/?api=1&query=${lat},${lng}`;
+
+        try {
+          console.log('🗺️ maps geo URL:', geoUrl);
+          await Linking.openURL(geoUrl);
+          return;
+        } catch (geoErr) {
+          console.error('Maps geo failed:', geoErr);
+          console.log('🗺️ maps https fallback URL:', httpsUrl);
+          await Linking.openURL(httpsUrl);
+          return;
         }
-      })
-      .catch((error) => {
-        console.error('Maps error:', error);
-        Alert.alert("Erreur", "Impossible d'ouvrir les cartes");
-      });
+      }
+
+      if (address) {
+        const encodedAddress = encodeURIComponent(address);
+        const httpsUrl = `https://www.google.com/maps/search/?api=1&query=${encodedAddress}`;
+        console.log('🗺️ maps address https URL:', httpsUrl);
+        await Linking.openURL(httpsUrl);
+        return;
+      }
+
+      Alert.alert("Erreur", "Aucune adresse disponible");
+    } catch (error) {
+      console.error('Maps error:', error);
+      Alert.alert("Erreur", "Impossible d'ouvrir les cartes");
+    }
   };
 
   const openReturnModal = (pkgId: string) => {
@@ -655,123 +671,140 @@ export default function DelivererTaskScreen({ navigation }: DelivererTaskScreenP
                 <Text style={styles.expandIcon}>{expandedPackageId === item.id ? '▼' : '▶'}</Text>
               </TouchableOpacity>
 
-              {/* Expanded Details - Show on Tap */}
+                    {/* Expanded Details - Show on Tap */}
               {expandedPackageId === item.id && (
                 <View style={styles.expandedDetails}>
-                  <View style={styles.detailSection}>
-                    <Text style={styles.detailTitle}>📦 Détails du Colis</Text>
-                    <View style={styles.detailRow}>
-                      <Text style={styles.detailLabel}>Référence:</Text>
-                      <Text style={styles.detailValue}>{item.ref_number}</Text>
-                    </View>
-                    <View style={styles.detailRow}>
-                      <Text style={styles.detailLabel}>Client:</Text>
-                      <Text style={styles.detailValue}>{item.customer_name || 'Non spécifié'}</Text>
-                    </View>
-                    
-                    {/* Address with GPS button */}
-                    <View style={styles.detailRow}>
-                      <Text style={styles.detailLabel}>Adresse:</Text>
-                      <View style={styles.addressRow}>
-                        <Text style={styles.detailValue}>{item.customer_address || 'Non spécifiée'}</Text>
-                        {(item.customer_address || (item.gps_lat && item.gps_lng)) && (
-                          <TouchableOpacity 
-                            style={styles.gpsBtn} 
-                            onPress={() => openMaps(item.customer_address || '', item.gps_lat, item.gps_lng)}
-                          >
-                            <Text style={styles.gpsBtnText}>🗺️</Text>
-                          </TouchableOpacity>
-                        )}
-                      </View>
-                    </View>
-                    
-                    {/* Primary Phone with Call & WhatsApp */}
-                    <View style={styles.detailRow}>
-                      <Text style={styles.detailLabel}>Téléphone 1:</Text>
-                      <View style={styles.phoneRow}>
-                        <Text style={styles.detailValue}>{item.customer_phone || 'Non spécifié'}</Text>
-                        {item.customer_phone && (
-                          <View style={styles.phoneButtons}>
-                            <TouchableOpacity 
-                              style={styles.callBtn} 
-                              onPress={() => makePhoneCall(item.customer_phone!)}
-                            >
-                              <Text style={styles.callBtnText}>📞</Text>
-                            </TouchableOpacity>
-                            <TouchableOpacity 
-                              style={styles.whatsappBtn} 
-                              onPress={() => openWhatsApp(item.customer_phone!)}
-                            >
-                              <Text style={styles.whatsappBtnText}>💬</Text>
-                            </TouchableOpacity>
-                          </View>
-                        )}
-                      </View>
-                    </View>
-                    
-                    {/* Secondary Phone with Call & WhatsApp */}
-                    {item.customer_phone_2 && (
+                  <ScrollView
+                    style={{ flex: 1 }}
+                    contentContainerStyle={styles.expandedDetailsScrollContent}
+                    keyboardShouldPersistTaps="handled"
+                  >
+                    <View style={styles.detailSection}>
+                      <Text style={styles.detailTitle}>📦 Détails du Colis</Text>
+
                       <View style={styles.detailRow}>
-                        <Text style={styles.detailLabel}>Téléphone 2:</Text>
-                        <View style={styles.phoneRow}>
-                          <Text style={styles.detailValue}>{item.customer_phone_2}</Text>
-                          <View style={styles.phoneButtons}>
+                        <Text style={styles.detailLabel}>Référence:</Text>
+                        <Text style={styles.detailValue}>{item.ref_number}</Text>
+                      </View>
+
+                      <View style={styles.detailRow}>
+                        <Text style={styles.detailLabel}>Client:</Text>
+                        <Text style={styles.detailValue}>{item.customer_name || 'Non spécifié'}</Text>
+                      </View>
+
+                      {/* Address with GPS button */}
+                      <View style={styles.detailRow}>
+                        <Text style={styles.detailLabel}>Adresse:</Text>
+                        <View style={styles.addressRow}>
+                          <Text style={styles.detailValue}>{item.customer_address || 'Non spécifiée'}</Text>
+                          {(item.customer_address || (item.gps_lat && item.gps_lng)) && (
                             <TouchableOpacity 
-                              style={styles.callBtn} 
-                              onPress={() => makePhoneCall(item.customer_phone_2!)}
+                              style={styles.gpsBtn} 
+                              onPress={() => openMaps(item.customer_address || '', item.gps_lat, item.gps_lng)}
                             >
-                              <Text style={styles.callBtnText}>📞</Text>
+                              <Text style={styles.gpsBtnText}>🗺️</Text>
                             </TouchableOpacity>
-                            <TouchableOpacity 
-                              style={styles.whatsappBtn} 
-                              onPress={() => openWhatsApp(item.customer_phone_2!)}
-                            >
-                              <Text style={styles.whatsappBtnText}>💬</Text>
-                            </TouchableOpacity>
-                          </View>
+                          )}
                         </View>
                       </View>
-                    )}
-                    
-                    <View style={styles.detailRow}>
-                      <Text style={styles.detailLabel}>Prix:</Text>
-                      <Text style={styles.detailValue}>{item.is_paid ? 'Payé' : `${item.price} DH`}</Text>
-                    </View>
-                    {item.description && (
-                      <View style={styles.detailRow}>
-                        <Text style={styles.detailLabel}>Description:</Text>
-                        <Text style={styles.detailValue}>{item.description}</Text>
-                      </View>
-                    )}
-                  </View>
 
-                  {/* Action Buttons */}
-                  <View style={styles.actionSection}>
-                    {item.status === 'Assigned' && (
-                      <TouchableOpacity 
-                        style={[styles.actionBtn, styles.acceptBtn]} 
-                        onPress={() => handleAcceptTask(item.id)}
-                      >
-                        <Text style={styles.actionBtnText}>✅ Accepter Mission</Text>
-                      </TouchableOpacity>
-                    )}
-                    {item.status === 'In Transit' && (
-                      <>
+                      {/* Primary Phone with Call & WhatsApp */}
+                      <View style={styles.detailRow}>
+                        <Text style={styles.detailLabel}>Téléphone 1:</Text>
+                        <View style={styles.phoneRow}>
+                          <Text style={styles.phoneValue}>
+                            {item.customer_phone || 'Non spécifié'}
+                          </Text>
+                          {item.customer_phone && (
+                            <View style={styles.phoneButtons}>
+                              <TouchableOpacity 
+                                style={styles.callBtn} 
+                                onPress={() => makePhoneCall(item.customer_phone!)}
+                              >
+                                <Text style={styles.callBtnText}>📞</Text>
+                              </TouchableOpacity>
+                              <TouchableOpacity 
+                                style={styles.whatsappBtn} 
+                                onPress={() => openWhatsApp(item.customer_phone!)}
+                              >
+                                <Text style={styles.whatsappBtnText}>💬</Text>
+                              </TouchableOpacity>
+                            </View>
+                          )}
+                        </View>
+                      </View>
+
+                      {/* Secondary Phone with Call & WhatsApp */}
+                      {item.customer_phone_2 && (
+                        <View style={styles.detailRow}>
+                          <Text style={styles.detailLabel}>Téléphone 2:</Text>
+                          <View style={styles.phoneRow}>
+                            <Text style={styles.phoneValue}>
+                              {item.customer_phone_2}
+                            </Text>
+                            <View style={styles.phoneButtons}>
+                              <TouchableOpacity 
+                                style={styles.callBtn} 
+                                onPress={() => makePhoneCall(item.customer_phone_2!)}
+                              >
+                                <Text style={styles.callBtnText}>📞</Text>
+                              </TouchableOpacity>
+                              <TouchableOpacity 
+                                style={styles.whatsappBtn} 
+                                onPress={() => openWhatsApp(item.customer_phone_2!)}
+                              >
+                                <Text style={styles.whatsappBtnText}>💬</Text>
+                              </TouchableOpacity>
+                            </View>
+                          </View>
+                        </View>
+                      )}
+
+                      <View style={styles.detailRow}>
+                        <Text style={styles.detailLabel}>Prix:</Text>
+                        <Text style={styles.detailValue}>
+                          {item.is_paid ? 'Payé' : `${item.price} DH`}
+                        </Text>
+                      </View>
+
+                      {item.description && (
+                        <View style={styles.detailRow}>
+                          <Text style={styles.detailLabel}>Description:</Text>
+                          <Text style={styles.detailValue}>{item.description}</Text>
+                        </View>
+                      )}
+                    </View>
+
+                    {/* Action Buttons */}
+                    <View style={styles.actionSection}>
+                      {item.status === 'Assigned' && (
                         <TouchableOpacity 
-                          style={[styles.actionBtn, styles.deliverBtn]} 
-                          onPress={() => handleDeliverTask(item.id)}
+                          style={[styles.actionBtn, styles.acceptBtn]} 
+                          onPress={() => handleAcceptTask(item.id)}
                         >
-                          <Text style={styles.actionBtnText}>📦 Marquer Livré</Text>
+                          <Text style={styles.actionBtnText}>✅ Accepter Mission</Text>
                         </TouchableOpacity>
-                        <TouchableOpacity 
-                          style={[styles.actionBtn, styles.returnBtn]} 
-                          onPress={() => openReturnModal(item.id)}
-                        >
-                          <Text style={styles.actionBtnText}>🔙 Retourner Colis</Text>
-                        </TouchableOpacity>
-                      </>
-                    )}
-                  </View>
+                      )}
+
+                      {item.status === 'In Transit' && (
+                        <>
+                          <TouchableOpacity 
+                            style={[styles.actionBtn, styles.deliverBtn]} 
+                            onPress={() => handleDeliverTask(item.id)}
+                          >
+                            <Text style={styles.actionBtnText}>📦 Marquer Livré</Text>
+                          </TouchableOpacity>
+
+                          <TouchableOpacity 
+                            style={[styles.actionBtn, styles.returnBtn]} 
+                            onPress={() => openReturnModal(item.id)}
+                          >
+                            <Text style={styles.actionBtnText}>🔙 Retourner Colis</Text>
+                          </TouchableOpacity>
+                        </>
+                      )}
+                    </View>
+                  </ScrollView>
                 </View>
               )}
             </View>
@@ -1112,6 +1145,9 @@ const styles = StyleSheet.create({
     borderTopWidth: 1,
     borderTopColor: '#E5E7EB',
   },
+  expandedDetailsScrollContent: {
+    paddingBottom: 8,
+  },
   detailSection: {
     marginBottom: 16,
   },
@@ -1123,21 +1159,24 @@ const styles = StyleSheet.create({
   },
   detailRow: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
+    justifyContent: 'flex-start',
+    alignItems: 'flex-start',
     marginBottom: 8,
   },
   detailLabel: {
     fontSize: 13,
     fontWeight: '600',
     color: '#6B7280',
-    flex: 1,
+    flex: 0,
+    width: '42%',
   },
   detailValue: {
     fontSize: 13,
     fontWeight: '500',
     color: '#111827',
-    flex: 2,
-    textAlign: 'right',
+    flex: 1,
+    textAlign: 'left',
+    flexWrap: 'wrap',
   },
   actionSection: {
     gap: 8,
@@ -1172,22 +1211,35 @@ const styles = StyleSheet.create({
   },
   phoneRow: {
     flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
+    alignItems: 'flex-start',
+    justifyContent: 'flex-end',
     flex: 1,
+    gap: 8,
+    flexWrap: 'wrap',
+  },
+  phoneValue: {
+    fontSize: 13,
+    fontWeight: '500',
+    color: '#111827',
+    flex: 1,
+    textAlign: 'left',
+    flexWrap: 'wrap',
   },
   phoneButtons: {
     flexDirection: 'row',
-    gap: 4,
+    gap: 8,
+    marginLeft: 0,
+    flexShrink: 0,
+    flexWrap: 'wrap',
   },
   callBtn: {
     backgroundColor: '#10B981',
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 4,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 6,
     alignItems: 'center',
     justifyContent: 'center',
-    minWidth: 30,
+    minWidth: 38,
   },
   callBtnText: {
     fontSize: 12,
@@ -1195,12 +1247,12 @@ const styles = StyleSheet.create({
   },
   whatsappBtn: {
     backgroundColor: '#25D366',
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 4,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 6,
     alignItems: 'center',
     justifyContent: 'center',
-    minWidth: 30,
+    minWidth: 38,
   },
   whatsappBtnText: {
     fontSize: 12,
@@ -1208,12 +1260,12 @@ const styles = StyleSheet.create({
   },
   gpsBtn: {
     backgroundColor: '#3B82F6',
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 4,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 6,
     alignItems: 'center',
     justifyContent: 'center',
-    minWidth: 30,
+    minWidth: 38,
   },
   gpsBtnText: {
     fontSize: 12,
