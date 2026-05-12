@@ -448,6 +448,7 @@ export default function DelivererTaskScreen({ navigation }: DelivererTaskScreenP
           supplement_info: parsedPayload.supplement_info || foundPkg.supplement_info,
           date_of_arrive: parsedPayload.date_of_arrive || foundPkg.date_of_arrive,
           limit_date: parsedPayload.limit_date ?? foundPkg.limit_date,
+          ...(parsedPayload.limit_time ?? foundPkg.limit_time ? { limit_time: parsedPayload.limit_time ?? foundPkg.limit_time } : {}),
           price: parsedPayload.price ?? foundPkg.price,
           is_paid: parsedPayload.is_paid ?? foundPkg.is_paid,
           _lastModified: new Date().toISOString(),
@@ -507,6 +508,7 @@ export default function DelivererTaskScreen({ navigation }: DelivererTaskScreenP
       supplement_info: parsedPayload?.supplement_info ?? '',
       date_of_arrive: parsedPayload?.date_of_arrive ?? parsedPayload?.created_at ?? new Date().toISOString(),
       limit_date: parsedPayload?.limit_date ?? undefined,
+      ...(parsedPayload?.limit_time ? { limit_time: parsedPayload?.limit_time } : {}),
 
       price: parsedPayload?.price ?? 0,
       is_paid: !!parsedPayload?.is_paid,
@@ -572,6 +574,49 @@ export default function DelivererTaskScreen({ navigation }: DelivererTaskScreenP
       'Archived': 'Archivé'
     };
     return statusTranslations[status] || status;
+  };
+
+  type DeadlineWarningLevel = 'OK' | 'WARNING' | 'URGENT' | 'EXPIRED';
+
+  const computeDeadlineWarning = (pkg: any): DeadlineWarningLevel => {
+    if (!pkg?.limit_date) return 'OK';
+    if (pkg.status === 'Delivered' || pkg.status === 'Returned') return 'OK';
+
+    // Build deadline datetime
+    // - If limit_time exists: combine limit_date + limit_time
+    // - Else: treat limit_date as end-of-day (23:59) so date-only still creates a deterministic deadline
+    const limitDateStr = String(pkg.limit_date);
+    const timeStr = pkg.limit_time ? String(pkg.limit_time) : '23:59';
+
+    const [yyyy, mm, dd] = limitDateStr.includes('T')
+      ? limitDateStr.split('T')[0].split('-').map(Number)
+      : limitDateStr.split('/').length === 3
+        ? (() => {
+            const [d, m, y] = limitDateStr.split('/').map(Number);
+            return [y, m, d];
+          })()
+        : limitDateStr.split('-').map(Number);
+
+    const [HH, MM] = timeStr.split(':').map((n: string) => Number(n));
+
+    const deadline = new Date(yyyy, (mm || 1) - 1, dd || 1, HH || 0, MM || 0, 0, 0);
+    const now = new Date();
+
+    if (Number.isNaN(deadline.getTime())) return 'OK';
+
+    const diffMs = deadline.getTime() - now.getTime();
+    if (diffMs < 0) return 'EXPIRED';
+
+    const diffHours = diffMs / (1000 * 60 * 60);
+
+    // WARNING: within last 2 hours
+    if (diffHours <= 2) {
+      // URGENT: within last 1 hour
+      if (diffHours <= 1) return 'URGENT';
+      return 'WARNING';
+    }
+
+    return 'OK';
   };
 
   return (
@@ -663,7 +708,35 @@ export default function DelivererTaskScreen({ navigation }: DelivererTaskScreenP
               >
                 <Text style={styles.lineNumber}>{index + 1}.</Text>
                 <View style={styles.lineInfo}>
-                  <Text style={styles.lineText}>{item.ref_number} - {item.customer_name || 'Client'}</Text>
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, flex: 1 }}>
+                    <Text style={styles.lineText}>{item.ref_number}</Text>
+
+                    {(() => {
+                      const level = computeDeadlineWarning(item);
+                      if (level === 'OK') return null;
+
+                      const label =
+                        level === 'EXPIRED' ? '⛔ Dépassé' :
+                        level === 'URGENT' ? '⚠️ URGENT' :
+                        '⏰ Bientôt';
+
+                      const bg =
+                        level === 'EXPIRED' ? '#EF4444' :
+                        level === 'URGENT' ? '#F97316' :
+                        '#F59E0B';
+
+                      return (
+                        <View style={{ backgroundColor: bg, paddingHorizontal: 8, paddingVertical: 4, borderRadius: 999 }}>
+                          <Text style={{ color: '#FFFFFF', fontSize: 10, fontWeight: '800' }}>{label}</Text>
+                        </View>
+                      );
+                    })()}
+
+                    <Text style={styles.lineText} numberOfLines={1}>
+                      {item.customer_name || 'Client'}
+                    </Text>
+                  </View>
+
                   <View style={[styles.statusIndicator, { backgroundColor: getStatusColor(item.status) }]}>
                     <Text style={styles.statusText}>{translateStatus(item.status)}</Text>
                   </View>
@@ -764,6 +837,15 @@ export default function DelivererTaskScreen({ navigation }: DelivererTaskScreenP
                         <Text style={styles.detailLabel}>Prix:</Text>
                         <Text style={styles.detailValue}>
                           {item.is_paid ? 'Payé' : `${item.price} DH`}
+                        </Text>
+                      </View>
+
+                      {/* Deadline (mandatory display if present) */}
+                      <View style={styles.detailRow}>
+                        <Text style={styles.detailLabel}>Date lim. :</Text>
+                        <Text style={styles.detailValue}>
+                          {item.limit_date || 'N/A'}
+                          {item.limit_time ? ` ${item.limit_time}` : ''}
                         </Text>
                       </View>
 

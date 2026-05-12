@@ -148,13 +148,47 @@ export default function AdminPackageListScreen({ navigation, route }: AdminPacka
       return false;
     }
 
-    // Date filter
-    const pkgDate = pkg.limit_date?.split('T')[0];
-    const today = new Date().toISOString().split('T')[0];
-    const oneWeekAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
-    
-    if (filterDate === 'today' && pkgDate !== today) return false;
-    if (filterDate === 'week' && (pkgDate as string) && pkgDate < oneWeekAgo) return false;
+    // Date/Time filter (limit_date + optional limit_time)
+    // - When limit_time is missing, we treat deadline as end-of-day (23:59) for deterministic filtering.
+    const buildDeadline = (): Date | null => {
+      if (!pkg?.limit_date) return null;
+
+      const limitDateStr = String(pkg.limit_date);
+      const timeStr = pkg.limit_time ? String(pkg.limit_time) : '23:59';
+
+      const [yyyy, mm, dd] = limitDateStr.includes('T')
+        ? limitDateStr.split('T')[0].split('-').map(Number)
+        : limitDateStr.split('/').length === 3
+          ? (() => {
+              const [d, m, y] = limitDateStr.split('/').map(Number);
+              return [y, m, d];
+            })()
+          : limitDateStr.split('-').map(Number);
+
+      const [HH, MM] = timeStr.split(':').map((n: string) => Number(n));
+
+      const deadline = new Date(yyyy, (mm || 1) - 1, dd || 1, HH || 0, MM || 0, 0, 0);
+      return Number.isNaN(deadline.getTime()) ? null : deadline;
+    };
+
+    const deadline = buildDeadline();
+
+    if (filterDate === 'today') {
+      if (!deadline) return false;
+      const today = new Date();
+      const sameLocalDate =
+        deadline.getFullYear() === today.getFullYear() &&
+        deadline.getMonth() === today.getMonth() &&
+        deadline.getDate() === today.getDate();
+
+      if (!sameLocalDate) return false;
+    }
+
+    if (filterDate === 'week') {
+      if (!deadline) return false;
+      const oneWeekAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
+      if (deadline.getTime() < oneWeekAgo.getTime()) return false;
+    }
 
     return true;
   });

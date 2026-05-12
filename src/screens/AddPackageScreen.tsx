@@ -26,6 +26,7 @@ export default function AddPackageScreen({ navigation }: AddPackageScreenProps) 
   const [weight, setWeight] = useState(scannedData?.weight || '');
   const [description, setDescription] = useState(scannedData?.description || '');
   const [limitDate, setLimitDate] = useState(scannedData?.limit_date || '');
+  const [limitTime, setLimitTime] = useState(scannedData?.limit_time || '');
   const [price, setPrice] = useState(scannedData?.price?.toString() || '');
   const [isPaid, setIsPaid] = useState(scannedData?.is_paid || false);
 
@@ -63,6 +64,7 @@ export default function AddPackageScreen({ navigation }: AddPackageScreenProps) 
       gps_lat: sanitizeInput(gpsLat),
       gps_lng: sanitizeInput(gpsLng),
       limit_date: sanitizeInput(limitDate),
+      limit_time: sanitizeInput(limitTime),
       price: sanitizeInput(price),
       is_paid: isPaid,
     };
@@ -98,8 +100,9 @@ export default function AddPackageScreen({ navigation }: AddPackageScreenProps) 
       }
     }
 
-    // Set default limit date to today if not provided
+    // Set default deadline date if not provided; do NOT default time
     const finalLimitDate = sanitizedData.limit_date || new Date().toISOString().split('T')[0];
+    const finalLimitTime = sanitizedData.limit_time || undefined;
 
     setLoading(true);
     try {
@@ -127,6 +130,7 @@ export default function AddPackageScreen({ navigation }: AddPackageScreenProps) 
         gps_lat: sanitizedData.gps_lat ? parseFloat(sanitizedData.gps_lat) : undefined,
         gps_lng: sanitizedData.gps_lng ? parseFloat(sanitizedData.gps_lng) : undefined,
         limit_date: finalLimitDate,
+        ...(finalLimitTime ? { limit_time: finalLimitTime } : {}),
         price: isPaid ? 0 : parseFloat(sanitizedData.price),
         is_paid: isPaid,
         assigned_to: undefined,
@@ -240,6 +244,16 @@ export default function AddPackageScreen({ navigation }: AddPackageScreenProps) 
               <Text style={styles.label}>Date Limite *</Text>
               <TextInput style={styles.input} placeholder="JJ/MM/AAAA (laisser vide = aujourd'hui)" value={limitDate} onChangeText={setLimitDate} />
             </View>
+          </View>
+
+          <View style={styles.inputGroup}>
+            <Text style={styles.label}>Heure Limite (HH:mm)</Text>
+            <TextInput
+              style={styles.input}
+              placeholder="Ex: 17:30 (laisser vide = 00:00)"
+              value={limitTime}
+              onChangeText={setLimitTime}
+            />
           </View>
 
           <Text style={styles.sectionTitle}>4. Facturation</Text>

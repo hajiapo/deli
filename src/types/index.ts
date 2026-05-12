@@ -15,6 +15,7 @@ export interface Package {
   price: number;
   is_paid: boolean;
   limit_date?: string; // Made optional
+  limit_time?: string; // HH:mm
   gps_lat?: number;
   gps_lng?: number;
   assigned_to?: string;

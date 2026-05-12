@@ -1,0 +1,7 @@
+- [ ] Add `limit_time?: string` to `src/types/index.ts`
+- [ ] Extend QR payload (`src/utils/qrGenerator.ts`) to include `limit_time`
+- [ ] Add `limit_time` input + persistence to Firestore/local (`src/screens/AddPackageScreen.tsx`)
+- [ ] Parse/store `limit_time` from QR in driver flow (`src/screens/DelivererTaskScreen.tsx`)
+- [ ] Display `limit_time` next to `limit_date` in driver task list (`src/components/PackageCard.tsx`)
+- [ ] Include `limit_time` in printable receipt (`src/screens/PackageListScreen.tsx`)
+- [ ] Verify build/typecheck and do QR scan smoke test

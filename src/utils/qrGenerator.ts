@@ -19,6 +19,7 @@ interface QRCodeData {
   gps_lat: number;
   gps_lng: number;
   limit_date: string;
+  limit_time?: string; // HH:mm (optional)
   price: number;
   is_paid: boolean;
 }
@@ -54,6 +55,7 @@ export const extractQRData = (fullPackage: any): QRCodeData => {
     gps_lat: fullPackage.gps_lat,
     gps_lng: fullPackage.gps_lng,
     limit_date: fullPackage.limit_date,
+    ...(fullPackage.limit_time ? { limit_time: fullPackage.limit_time } : {}),
     price: fullPackage.price,
     is_paid: fullPackage.is_paid,
   };

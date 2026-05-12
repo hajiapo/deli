@@ -25,6 +25,7 @@ interface PackageCardProps {
     price: number;
     is_paid: boolean;
     limit_date?: string; // Made optional
+    limit_time?: string; // HH:mm
     description?: string;
     return_reason?: string;
     assigned_to?: string;
@@ -56,6 +57,7 @@ export default function PackageCard(props: PackageCardProps) {
   const customerName = pkg.customer_name || 'Client inconnu';
   const customerAddress = pkg.customer_address || 'Adresse non disponible';
   const limitDate = pkg.limit_date || 'N/A';
+  const limitTime = pkg.limit_time;
   const packagePrice = typeof pkg.price === 'number' ? pkg.price.toFixed(2) : 'N/A';
   const assignedDriverName = pkg.assigned_to ? (drivers?.find(d => d.id === pkg.assigned_to)?.name || pkg.assigned_to) : null;
 
@@ -142,7 +144,9 @@ export default function PackageCard(props: PackageCardProps) {
           </View>
         )}
         
-        <Text style={styles.date}>À livrer avant: {limitDate}</Text>
+        <Text style={styles.date}>
+          À livrer avant: {limitDate}{limitTime ? ` ${limitTime}` : ''}
+        </Text>
         
         {/* Customer Phone */}
         {(pkg.customer_phone || pkg.customer_phone_2) && (

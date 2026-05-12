@@ -288,7 +288,7 @@ DÉTAILS COLIS
 Poids     : ${selectedPkg.weight || 'N/A'}
 Prix      : ${selectedPkg.is_paid ? 'Payé' : ((selectedPkg.price || 0) + ' DH')}
 Statut    : ${statusLabels[selectedPkg.status] || selectedPkg.status}
-Date lim. : ${selectedPkg.limit_date || 'N/A'}
+Date lim. : ${selectedPkg.limit_date || 'N/A'}${selectedPkg.limit_time ? ` ${selectedPkg.limit_time}` : ''}
 Notes     : ${selectedPkg.description || 'Aucune'}
 ----------------------------------`}
                   </Text>
