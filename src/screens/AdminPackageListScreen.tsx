@@ -819,12 +819,12 @@ export default function AdminPackageListScreen({ navigation, route }: AdminPacka
                     return driver?.name || assignedId;
                   })()}</Text>
 
-                  <Text style={styles.detailLine}><Text style={styles.detailKey}>assigned_at:</Text> {formatDateTime(selectedPackageForDetails.assigned_at)}</Text>
-                  <Text style={styles.detailLine}><Text style={styles.detailKey}>accepted_at:</Text> {formatDateTime(selectedPackageForDetails.accepted_at)}</Text>
-                  <Text style={styles.detailLine}><Text style={styles.detailKey}>delivered_at:</Text> {formatDateTime(selectedPackageForDetails.delivered_at)}</Text>
+                  <Text style={styles.detailLine}><Text style={styles.detailKey}>Assigné le:</Text> {formatDateTime(selectedPackageForDetails.assigned_at)}</Text>
+                  <Text style={styles.detailLine}><Text style={styles.detailKey}>Accepté le:</Text> {formatDateTime(selectedPackageForDetails.accepted_at)}</Text>
+                  <Text style={styles.detailLine}><Text style={styles.detailKey}>Livré le:</Text> {formatDateTime(selectedPackageForDetails.delivered_at)}</Text>
 
                   {selectedPackageForDetails.status === 'Returned' && (
-                    <Text style={styles.detailLine}><Text style={styles.detailKey}>return_reason:</Text> {selectedPackageForDetails.return_reason || 'Raison non trouvée'}</Text>
+                    <Text style={styles.detailLine}><Text style={styles.detailKey}>Raison du retour:</Text> {selectedPackageForDetails.return_reason || 'Raison non trouvée'}</Text>
                   )}
                 </View>
               </ScrollView>

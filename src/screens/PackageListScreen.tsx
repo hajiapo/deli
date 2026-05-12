@@ -195,7 +195,7 @@ Notes     : ${pkg.description || 'Aucune'}
         statusBarTranslucent={true}
       >
         <SafeAreaView style={styles.modalOverlay} edges={['top', 'bottom']}>
-          <View style={[styles.modalContent, { height: '85%' }]}>
+          <View style={[styles.modalContent, { height: '90%' }]}>
             <View style={styles.modalHeader}>
               <Text style={styles.modalTitle}>Détails à imprimer</Text>
               <View style={styles.headerButtons}>
@@ -255,6 +255,8 @@ Notes     : ${pkg.description || 'Aucune'}
               style={styles.printableContainer}
               contentContainerStyle={styles.printableScrollContent}
               nestedScrollEnabled={true}
+              alwaysBounceVertical={true}
+              showsVerticalScrollIndicator={true}
             >
               {selectedPkg && (
                 <>
@@ -491,7 +493,7 @@ const styles = StyleSheet.create({
   },
   printableScrollContent: {
     padding: 20,
-    paddingBottom: 12,
+    paddingBottom: 120,
     alignItems: 'stretch',
     flexGrow: 1,
   },
