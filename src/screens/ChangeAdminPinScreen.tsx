@@ -112,14 +112,6 @@ export default function ChangeAdminPinScreen({ navigation }: ChangeAdminPinScree
         </View>
 
         <ScrollView contentContainerStyle={styles.content}>
-          <View style={styles.infoBox}>
-            <Text style={styles.infoTitle}>🔐 Sécurité</Text>
-            <Text style={styles.infoText}>
-              Votre PIN administrateur est stocké de manière sécurisée avec un chiffrement SHA-256.
-              Choisissez un PIN de 8 chiffres difficile à deviner.
-            </Text>
-          </View>
-
           <View style={styles.inputGroup}>
             <Text style={styles.label}>PIN Actuel *</Text>
             <TextInput
@@ -173,14 +165,6 @@ export default function ChangeAdminPinScreen({ navigation }: ChangeAdminPinScree
               <Text style={styles.submitText}>Changer le PIN</Text>
             )}
           </TouchableOpacity>
-
-          <View style={styles.tipsBox}>
-            <Text style={styles.tipsTitle}>💡 Conseils</Text>
-            <Text style={styles.tipText}>• Utilisez un PIN unique et difficile à deviner</Text>
-            <Text style={styles.tipText}>• Ne partagez jamais votre PIN avec personne</Text>
-            <Text style={styles.tipText}>• Changez votre PIN régulièrement</Text>
-            <Text style={styles.tipText}>• Mémorisez votre PIN, ne l'écrivez pas</Text>
-          </View>
         </ScrollView>
       </KeyboardAvoidingView>
     </SafeAreaView>
@@ -213,6 +197,7 @@ const styles = StyleSheet.create({
   },
   content: {
     padding: 20,
+    paddingTop: 40,
   },
   infoBox: {
     backgroundColor: '#EFF6FF',
