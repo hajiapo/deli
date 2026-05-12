@@ -419,12 +419,14 @@ const styles = StyleSheet.create({
   rowRef: {
     fontWeight: '700',
     color: '#111827',
-    width: 80,
+    width: 95,
   },
   rowCustomer: {
     flex: 1,
     color: '#4B5563',
     marginHorizontal: 8,
+    textAlign: 'center',
+    paddingLeft: 20,
   },
   rowStatusBadge: {
     paddingHorizontal: 8,
