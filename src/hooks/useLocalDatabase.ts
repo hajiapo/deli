@@ -31,7 +31,12 @@ interface UseLocalDatabaseOptions {
 
 export const useLocalDatabase = (options: UseLocalDatabaseOptions = {}) => {
   const { driverId, isAdmin = false } = options;
-  
+
+  // NOTE: keep hook return object always defined.
+  // Non-admin screens must be scoped to a driver; if driverId is missing, return no driver packages.
+  // (Variable kept for readability; gating uses `!isAdmin && !driverId` checks below.)
+  const shouldScopeToDriver = !isAdmin && !!driverId;
+
   const [packages, setPackages] = useState<Package[]>([]);
   const [drivers, setDrivers] = useState<Driver[]>([]);
   const [loading, setLoading] = useState(true);
@@ -170,6 +175,18 @@ export const useLocalDatabase = (options: UseLocalDatabaseOptions = {}) => {
   const loadLocalData = async () => {
     try {
       setLoading(true);
+
+      // Hard gate (Firestore only): non-admin without driverId should NOT sync "all packages".
+      // But we still load local packages so QR-created drafts are visible for "Accepter Mission".
+      // (Do NOT clear packages to preserve locally stored QR drafts.)
+      if (!isAdmin && !driverId) {
+        const localPackages = await getPackagesLocally(undefined, true); // includeArchived=true
+        setPackages(localPackages);
+        setDrivers(await getDriversLocally());
+        setLastSync(await getLastSyncTime());
+        return;
+      }
+
       const [localPackages, localDrivers, syncTime] = await Promise.all([
         getPackagesLocally(driverId, isAdmin), // Admin gets all packages including archived
         getDriversLocally(),
@@ -206,6 +223,12 @@ export const useLocalDatabase = (options: UseLocalDatabaseOptions = {}) => {
       setSyncing(true);
       setConnectionError(null);
       setIsOnline(true);
+
+      // Hard gate: non-admin without driverId should not sync all packages.
+      if (!isAdmin && !driverId) {
+        setSyncing(false);
+        return;
+      }
       
       // Skip Firebase sync for pre-stored driver IDs (DRV-001 to DRV-020)
       const isPreStored = driverId ? isPreStoredDriverId(driverId) : false;

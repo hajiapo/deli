@@ -540,9 +540,10 @@ export default function DelivererTaskScreen({ navigation }: DelivererTaskScreenP
       Alert.alert('Aucun colis', 'Vous n\'avez aucun colis à exporter.');
       return;
     }
-    
-    // Show export options
-    showExportOptions(packages, `Driver_${driverId}`);
+
+    // Show export options (WhatsApp + CSV only)
+    // offlineExport.ts still supports Email, but DelivererTaskScreen limits the UI options.
+    showExportOptions(packages, `Driver_${driverId}`, undefined);
   };
 
   // Cash to collect (Only counts delivered packages)
